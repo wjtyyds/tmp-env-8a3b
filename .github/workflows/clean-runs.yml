@@ -1,6 +1,18 @@
-name: Clean Stopped Runs
+name: Clean Runs
 on:
   workflow_dispatch:
+    inputs:
+      clean_target:
+        description: '🎯 请选择要清理的记录类型'
+        required: true
+        default: '4_清理所有非成功的 (Not Success)'
+        type: choice
+        options:
+          - '1_清理所有已成功绿色 (Success)'
+          - '2_清理所有红色失败的 (Failure)'
+          - '3_清理所有灰色我停止的 (Cancelled)'
+          - '4_清理所有非成功的 (Not Success)'
+          - '5_清理所有 (All)'
 
 jobs:
   cleanup:
@@ -15,33 +27,55 @@ jobs:
       - name: 🗑️ 精准清理运行记录
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ inputs.clean_target }}
         run: |
-          echo "🔍 开始扫描流水线记录..."
+          echo "🔍 开始扫描流水线记录，模式：$TARGET"
           
-          # 1. 斩杀所有固件的残次品（失败/取消的记录）
-          bad_runs=$(gh run list --limit 100 --json databaseId,status,conclusion --jq '.[] | select(.status == "completed" and .conclusion != "success") | .databaseId')
-          if [ -n "$bad_runs" ]; then
-            echo "🔥 发现残次品记录，开始清理："
-            for id in $bad_runs; do
-              echo "删除失败/取消记录 ID: $id"
-              gh run delete $id || true
-            done
-          fi
+          # 根据面板选择的参数，动态生成 jq 过滤规则
+          jq_filter=""
+          case "$TARGET" in
+            1_*)
+              echo "➡️ 匹配模式：清理所有已成功 (绿色)"
+              jq_filter='.[] | select(.status == "completed" and .conclusion == "success") | .databaseId'
+              ;;
+            2_*)
+              echo "➡️ 匹配模式：清理所有失败 (红色)"
+              jq_filter='.[] | select(.status == "completed" and (.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "startup_failure")) | .databaseId'
+              ;;
+            3_*)
+              echo "➡️ 匹配模式：清理所有取消/停止 (灰色)"
+              jq_filter='.[] | select(.status == "completed" and .conclusion == "cancelled") | .databaseId'
+              ;;
+            4_*)
+              echo "➡️ 匹配模式：清理所有非成功"
+              jq_filter='.[] | select(.status == "completed" and .conclusion != "success") | .databaseId'
+              ;;
+            5_*)
+              echo "➡️ 匹配模式：清理所有记录"
+              jq_filter='.[] | .databaseId'
+              ;;
+            *)
+              echo "❌ 未知的选择模式"
+              exit 1
+              ;;
+          esac
 
-          # 2. 斩杀本清理脚本以前成功执行的历史记录（防止满屏都是清理成功的记录）
-          cleaner_runs=$(gh run list --workflow "${{ github.workflow }}" --limit 100 --json databaseId,status,conclusion --jq '.[] | select(.status == "completed" and .conclusion == "success") | .databaseId')
-          if [ -n "$cleaner_runs" ]; then
-            echo "👻 发现历史清理记录，开始自我销毁："
-            for self_id in $cleaner_runs; do
-              # 保险：如果是当前的自己，跳过不删（GitHub 限制）
-              if [ "$self_id" != "${{ github.run_id }}" ]; then
-                echo "删除历史清理记录 ID: $self_id"
-                gh run delete $self_id || true
+          # 获取需要删除的记录 ID（将限制调高到 500 条一次，清理更彻底）
+          runs_to_delete=$(gh run list --limit 500 --json databaseId,status,conclusion --jq "$jq_filter")
+          
+          if [ -n "$runs_to_delete" ]; then
+            echo "🔥 发现符合条件的记录，开始逐个清理："
+            for id in $runs_to_delete; do
+              # 保险：排除本次正在执行的脚本自己，避免中途自尽报错
+              if [ "$id" != "${{ github.run_id }}" ]; then
+                echo "删除记录 ID: $id"
+                gh run delete $id || true
               fi
             done
+            echo "✅ 清理执行完毕！"
+          else
+            echo "👻 没有找到符合该条件的记录。"
           fi
-          
-          echo "✅ 清理完毕！其他固件的成功编译记录完好无损。"
 
       - name: 👻 终极自毁 (阅后即焚)
         env:
