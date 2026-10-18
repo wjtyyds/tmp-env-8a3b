@@ -177,6 +177,7 @@ jobs:
                   DAY="${BASH_REMATCH[3]}"
                   echo "TARGET_DATE_ISO=${YEAR}-${MONTH}-${DAY}T23:59:59Z" >> $GITHUB_ENV
                   echo "TARGET_DATE_ISO=${YEAR}-${MONTH}-${DAY}T15:59:59Z" >> $GITHUB_ENV
+                  echo "TARGET_DATE_SIMPLE=20${BASH_REMATCH[1]}.${MONTH}.${DAY}" >> $GITHUB_ENV
               fi
           fi
           
@@ -370,7 +371,7 @@ jobs:
             else
               echo "⛔ [DEBUG] 已命中 09.09，成功拦截 Passwall 注入！"
             fi
-            
+          
             # 替换为通配符包含匹配
             if [[ "${{ env.TARGET_DATE_ISO }}" != *"2026-09-09"* ]] && [[ "${{ env.TARGET_DATE_ISO }}" != *"2026-09-16"* ]]; then
               echo "✅ [DEBUG] 未命中 09.09/09.16 拦截，正常注入 Daede 套件。"
@@ -483,7 +484,7 @@ jobs:
           fi
           
           echo "注入 AdGuardHome 引导脚本..."
-          cat << 'EOF' > $BASE_FILES/etc/init.d/sys_env_init
+          cat << 'EOF' > $BASE_FILES/etc/init.d/ign0
           #!/bin/sh /etc/rc.common
           START=99
           start() {
@@ -494,17 +495,29 @@ jobs:
                     IS_EMMC=1
                   fi
           
+                  # 动态判定当前固件是否为 iStoreOS
+                  IS_ISTOREOS=0
+                  grep -qi "istoreos" /etc/os-release && IS_ISTOREOS=1
+          
                   if [ -f /usr/lib/adg_core/AdGuardHome ]; then
-                      if [ "$IS_EMMC" = "1" ] && [ -d /mnt/mmcblk2p4 ]; then
+                      if [ "$IS_EMMC" = "1" ] && [ "$IS_ISTOREOS" = "1" ] && [ -d /mnt/mmcblk2p4 ]; then
+                          # iStoreOS eMMC 专属逻辑：迁移至第四分区并去掉 _data 后缀
                           DATA_DIR="/mnt/mmcblk2p4/AdGuardHome"
                           mkdir -p "$DATA_DIR"
                           cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
+          
+                          # 兜底：如果 U 盘阶段有残留的 _data 数据，顺手合并过来
+                          [ -d /usr/bin/AdGuardHome_data ] && cp -rn /usr/bin/AdGuardHome_data/* "$DATA_DIR/" 2>/dev/null
+          
                           chmod 755 "$DATA_DIR/AdGuardHome"
                           rm -rf /usr/bin/AdGuardHome
                           ln -sf "$DATA_DIR" /usr/bin/AdGuardHome
+          
+                          # 清理无用目录，彻底抹除痕迹
                           rm -rf /usr/lib/adg_core
                           rm -rf /usr/bin/AdGuardHome_data
                       else
+                          # U盘引导阶段 或 其他非 iStoreOS 固件的全局通用逻辑
                           DATA_DIR="/usr/bin/AdGuardHome_data"
                           mkdir -p "$DATA_DIR"
                           cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
@@ -514,15 +527,17 @@ jobs:
                       fi
                       /etc/init.d/AdGuardHome restart 2>/dev/null
                   fi
+          
+                  # 写入 eMMC 后阅后即焚，不留自身痕迹
                   if [ "$IS_EMMC" = "1" ]; then
-                      rm -f /etc/rc.d/S99sys_env_init
-                      rm -f /etc/init.d/sys_env_init
+                      rm -f /etc/rc.d/S99ign0
+                      rm -f /etc/init.d/ign0
                   fi
               ) &
           }
           EOF
-          chmod +x $BASE_FILES/etc/init.d/sys_env_init
-          ln -sf ../init.d/sys_env_init $BASE_FILES/etc/rc.d/S99sys_env_init
+          chmod +x $BASE_FILES/etc/init.d/ign0
+          ln -sf ../init.d/ign0 $BASE_FILES/etc/rc.d/S99ign0
           
           cat << 'EOF' > $BASE_FILES/etc/rc.local
           # Put your custom commands here that should be executed once
@@ -584,6 +599,13 @@ jobs:
           
           ROOTFS_FILE=$(find ../openwrt/bin/targets/ -type f -name "*-rootfs.tar.gz" | head -n 1)
           sudo mv "$ROOTFS_FILE" ./openwrt-armvirt-64-default-rootfs.tar.gz
+          
+          REAL_VER=$(tar -xOzf ./openwrt-armvirt-64-default-rootfs.tar.gz etc/os-release 2>/dev/null | grep -E '^VERSION_ID=' | cut -d'"' -f2)
+          if [ -z "$REAL_VER" ]; then
+              REAL_VER=$(tar -xOzf ./openwrt-armvirt-64-default-rootfs.tar.gz etc/os-release 2>/dev/null | grep -E '^VERSION=' | cut -d'"' -f2)
+          fi
+          if [ -z "$REAL_VER" ]; then REAL_VER="$OPENWRT_VER"; fi
+          echo "REAL_VER=$REAL_VER" >> make.env
           
           mkdir -p inject_tmp/root
           
@@ -659,6 +681,17 @@ jobs:
           OPENWRT_VER="${{ inputs.source_branch }}"
           if [ "$OPENWRT_VER" == "master" ]; then OPENWRT_VER="R$(date +%y.%m.%d)"; fi
           
+          OS_RELEASE_FILE=$(find openwrt/build_dir/target-*/root-*/etc/os-release -type f 2>/dev/null | head -n 1)
+          REAL_VER=""
+          if [ -f "$OS_RELEASE_FILE" ]; then
+              REAL_VER=$(grep -E '^VERSION_ID=' "$OS_RELEASE_FILE" | cut -d'"' -f2)
+              if [ -z "$REAL_VER" ]; then
+                  REAL_VER=$(grep -E '^VERSION=' "$OS_RELEASE_FILE" | cut -d'"' -f2)
+              fi
+          fi
+          if [ -z "$REAL_VER" ]; then REAL_VER="$OPENWRT_VER"; fi
+          echo "REAL_VER=$REAL_VER" >> packit/make.env
+          
           echo "KERNEL_VERSION=$REAL_KERNEL_VER" >> packit/make.env
           echo "OPENWRT_VER=$OPENWRT_VER" >> packit/make.env
           echo "WHOAMI=粉墨悲欢@恩山" >> packit/make.env
@@ -674,33 +707,25 @@ jobs:
           source packit/make.env
           DATETIME=$(date +'%Y%m%d%H%M')
           
-          if [[ "${{ env.FIRMWARE_LOWER }}" == lede* ]]; then
-             if [ -n "$CUSTOM_TAG" ]; then
-                DISPLAY_VER="$CUSTOM_TAG"
-             else
-                DISPLAY_VER="${OPENWRT_VER}"
-             fi
-          else
-             if [ -n "$CUSTOM_TAG" ]; then
-                DISPLAY_VER="${OPENWRT_VER}-${CUSTOM_TAG}"
-             else
-                DISPLAY_VER="${OPENWRT_VER}"
-             fi
-          fi
-          
-          CLEAN_VER="${DISPLAY_VER}"
+          CLEAN_VER="${REAL_VER}"
+          # 容错：如果 istoreos 提取出来的版本号自带 istoreos- 前缀，清理掉
           if [[ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ]] && [[ "$CLEAN_VER" == istoreos-* ]]; then
               CLEAN_VER="${CLEAN_VER#istoreos-}"
           fi
           
+          # 修复多余的横杠 `-`
           NOTE_SUFFIX=""
           if [ -n "$BUILD_NOTE" ]; then
              SAFE_NOTE=$(echo "$BUILD_NOTE" | sed 's/[[:space:]]/_/g')
-             NOTE_SUFFIX="-${SAFE_NOTE}"
+             # 严谨判断：只有当处理后的备注确实有字符时，才加上前面的连字符
+             if [ -n "$SAFE_NOTE" ]; then
+                 NOTE_SUFFIX="-${SAFE_NOTE}"
+             fi
           fi
           
           for img in packit/output/*.img.gz; do
-             base_name="${{ env.FIRMWARE_LOWER }}-${CLEAN_VER}-${KERNEL_VERSION}_${DATETIME}${NOTE_SUFFIX}"
+             # 严格按照格式：[源码名]-[真实版本号]-[内核]-[编译备注]_[时间戳].img.gz
+             base_name="${{ env.FIRMWARE_LOWER }}-${CLEAN_VER}-${KERNEL_VERSION}${NOTE_SUFFIX}_${DATETIME}"
              new_img_name="${base_name}.img.gz"
              cp "$img" "release_files/$new_img_name"
              echo "✅ 准备发布镜像: $new_img_name"
