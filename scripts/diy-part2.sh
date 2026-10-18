@@ -81,10 +81,14 @@ mkdir -p package/custom
 # 0.5. 提取公共逻辑：Golang 升级
 # ==========================================
 if [[ "$FIRMWARE_TYPE" != lede* ]] && [ "$BUILD_TYPE" != "personal" ]; then
-    echo "【Public 编译专属】：为 OpenWrt，ImmortalWrt，iStoreOS 升级 Golang 1.27..."
-    rm -rf feeds/packages/lang/golang
-    git clone -b 27.x --depth 1 https://github.com/sbwml/packages_lang_golang.git feeds/packages/lang/golang
-    ./scripts/feeds install -a -f
+    if [[ "$TARGET_DATE_ISO" != *"2026-09-09"* ]]; then
+        echo "【Public 编译专属】：为 OpenWrt，ImmortalWrt，iStoreOS 升级 Golang 1.27..."
+        rm -rf feeds/packages/lang/golang
+        git clone -b 27.x --depth 1 https://github.com/sbwml/packages_lang_golang.git feeds/packages/lang/golang
+        ./scripts/feeds install -a -f
+    else
+        echo "⛔ [DEBUG-SH] 命中 09.09 拦截日期，保持自带版本，跳过 Golang 升级！"
+    fi
 fi
 
 # ==========================================
@@ -213,15 +217,19 @@ elif [ "$FIRMWARE_TYPE" == "immortalwrt" ]; then
 elif [ "$FIRMWARE_TYPE" == "openwrt" ] || [ "$FIRMWARE_TYPE" == "istoreos" ]; then
     if [ "$BUILD_TYPE" != "personal" ]; then
         # OpenWrt 和 iStoreOS 共同的高版本 Docker 替换逻辑
-        if [[ "$SOURCE_BRANCH" =~ ^v([0-9]+\.[0-9]+) ]] || [[ "$SOURCE_BRANCH" == *"25.12"* ]]; then
-            IMM_PKG_BRANCH="openwrt-${BASH_REMATCH[1]:-25.12}"
+        if [[ "$TARGET_DATE_ISO" != *"2026-09-09"* ]]; then
+            if [[ "$SOURCE_BRANCH" =~ ^v([0-9]+\.[0-9]+) ]] || [[ "$SOURCE_BRANCH" == *"25.12"* ]]; then
+                IMM_PKG_BRANCH="openwrt-${BASH_REMATCH[1]:-25.12}"
+            else
+                IMM_PKG_BRANCH="master"
+            fi
+            rm -rf feeds/packages/utils/{docker,dockerd,containerd,runc,docker-compose}
+            git clone -b "$IMM_PKG_BRANCH" --depth 1 https://github.com/immortalwrt/packages.git /tmp/imm_packages
+            cp -r /tmp/imm_packages/utils/{docker,dockerd,containerd,runc,docker-compose} feeds/packages/utils/ || true
+            rm -rf /tmp/imm_packages
         else
-            IMM_PKG_BRANCH="master"
+            echo "⛔ [DEBUG-SH] 命中 09.09 拦截日期，跳过 ImmortalWrt Docker 组件替换，保持源码自带版本！"
         fi
-        rm -rf feeds/packages/utils/{docker,dockerd,containerd,runc,docker-compose}
-        git clone -b "$IMM_PKG_BRANCH" --depth 1 https://github.com/immortalwrt/packages.git /tmp/imm_packages
-        cp -r /tmp/imm_packages/utils/{docker,dockerd,containerd,runc,docker-compose} feeds/packages/utils/ || true
-        rm -rf /tmp/imm_packages
     fi
 
     # 分支独有逻辑
