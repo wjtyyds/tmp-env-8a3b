@@ -305,9 +305,11 @@ jobs:
 
           if [[ "${CONF_NAME}" == lede* ]]; then
             if [ "${CONF_NAME}" == "lede-native" ]; then
+              
+              # lede-native回退9月10日6.6内核修改配置
               sed -i 's/CONFIG_LINUX_6_18=y/# CONFIG_LINUX_6_18 is not set/g' openwrt/.config
-              sed -i 's/CONFIG_LINUX_6_12=y/# CONFIG_LINUX_6_12 is not set/g' openwrt/.config
               echo "CONFIG_LINUX_6_6=y" >> openwrt/.config
+          
               sed -i 's/CONFIG_PACKAGE_brcmfmac-firmware-usb=y/# CONFIG_PACKAGE_brcmfmac-firmware-usb is not set/g' openwrt/.config
               sed -i 's/CONFIG_BRCMFMAC_USB=y/# CONFIG_BRCMFMAC_USB is not set/g' openwrt/.config
             elif [ "${CONF_NAME}" == "lede" ]; then

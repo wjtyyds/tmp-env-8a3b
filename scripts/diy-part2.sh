@@ -200,9 +200,6 @@ else
 fi
 
 if [[ "$FIRMWARE_TYPE" == lede* ]]; then
-    if [ "$FIRMWARE_TYPE" == "lede-native" ]; then
-        sed -i 's/KERNEL_PATCHVER:=6.18/KERNEL_PATCHVER:=6.6/g' target/linux/amlogic/Makefile
-    fi
     # 修复 LEDE Aurora 主题页脚
     find package/custom/luci-theme-aurora -name "footer.ut" -exec sed -i 's/({{ version.distrevision }})/{% if (version.distrevision): %} ({{ version.distrevision }}){% endif %}/g' {} +
 
