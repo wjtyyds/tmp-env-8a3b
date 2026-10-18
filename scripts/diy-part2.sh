@@ -398,12 +398,19 @@ fi
     # 触发系统原生生成默认配置（不加 rm -f，绝不破坏原有默认参数）
     wifi config 2>/dev/null
 
-    # 只做最精简的定制：解禁硬件、改名、加密码
-    uci set wireless.@wifi-device[0].disabled='0'
-    uci delete wireless.@wifi-iface[0].disabled 2>/dev/null
+    # 按照需求精确配置 5G 频段与属性
+    uci set wireless.@wifi-device[0].country='US'
+    uci set wireless.@wifi-device[0].htmode='VHT80'
+    uci set wireless.@wifi-device[0].channel='36'
+    uci set wireless.@wifi-device[0].band='5g'
+    uci delete wireless.@wifi-device[0].disabled 2>/dev/null
+
+    # 配置接口参数
     uci set wireless.@wifi-iface[0].ssid='Phicomm_n1'
-    uci set wireless.@wifi-iface[0].encryption='psk2'
+    uci set wireless.@wifi-iface[0].encryption='psk-mixed'
     uci set wireless.@wifi-iface[0].key='password'
+    uci delete wireless.@wifi-iface[0].disabled 2>/dev/null
+
     uci commit wireless
 
     # 强制拉起底层物理网卡

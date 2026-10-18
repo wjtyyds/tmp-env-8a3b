@@ -602,12 +602,27 @@ jobs:
           ROOTFS_FILE=$(find ../openwrt/bin/targets/ -type f -name "*-rootfs.tar.gz" | head -n 1)
           sudo mv "$ROOTFS_FILE" ./openwrt-armvirt-64-default-rootfs.tar.gz
           
-          REAL_VER=$(tar -xOzf ./openwrt-armvirt-64-default-rootfs.tar.gz etc/os-release 2>/dev/null | grep -E '^VERSION_ID=' | cut -d'"' -f2)
+          # ==================== 核心修正：绝对锁定 usr/lib/os-release ====================
+          # 只解压压缩包内的 usr/lib/os-release 真实文件
+          OS_RELEASE_TEXT=$(tar -xOzf ./openwrt-armvirt-64-default-rootfs.tar.gz usr/lib/os-release 2>/dev/null)
+          
+          # 提取版本号
+          REAL_VER=$(echo "$OS_RELEASE_TEXT" | grep -E '^VERSION_ID=' | cut -d'"' -f2 | head -n 1)
           if [ -z "$REAL_VER" ]; then
-              REAL_VER=$(tar -xOzf ./openwrt-armvirt-64-default-rootfs.tar.gz etc/os-release 2>/dev/null | grep -E '^VERSION=' | cut -d'"' -f2)
+              REAL_VER=$(echo "$OS_RELEASE_TEXT" | grep -E '^VERSION=' | cut -d'"' -f2 | head -n 1)
           fi
           if [ -z "$REAL_VER" ]; then REAL_VER="$OPENWRT_VER"; fi
+          REAL_VER=$(echo "$REAL_VER" | sed -E 's/^[vV]//' | sed -E 's/^istoreos-//')
+          
+          # 严格提取第一段字符串作为固件品牌 (ID)
+          REAL_ID=$(echo "$OS_RELEASE_TEXT" | grep -E '^OPENWRT_RELEASE=' | cut -d'"' -f2 | awk '{print $1}' | tr 'A-Z' 'a-z' | head -n 1)
+          
+          # (仅做为空情况的基础防呆，绝不再使用面板参数覆盖)
+          if [ -z "$REAL_ID" ]; then REAL_ID="openwrt"; fi 
+          
           echo "REAL_VER=$REAL_VER" >> make.env
+          echo "REAL_ID=$REAL_ID" >> make.env
+          # ==============================================================================
           
           mkdir -p inject_tmp/root
           
@@ -660,10 +675,10 @@ jobs:
           
           if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ]; then
              TARGET_DIR="openwrt/bin/targets/amlogic/meson/"
-             REAL_KERNEL_VER=$(ls openwrt/build_dir/target-*/linux-amlogic_meson/linux-* -d 2>/dev/null | head -n 1 | awk -F'linux-' '{print $NF}')
+             REAL_KERNEL_VER=$(ls openwrt/build_dir/target-*/linux-amlogic_meson/linux-* -d 2>/dev/null \vert{} head -n 1 \vert{} awk -F'linux-' '{print$NF}')
           else
              TARGET_DIR="openwrt/bin/targets/amlogic/mesongx/"
-             REAL_KERNEL_VER=$(ls openwrt/build_dir/target-*/linux-amlogic_mesongx/linux-* -d 2>/dev/null | head -n 1 | awk -F'linux-' '{print $NF}')
+             REAL_KERNEL_VER=$(ls openwrt/build_dir/target-*/linux-amlogic_mesongx/linux-* -d 2>/dev/null \vert{} head -n 1 \vert{} awk -F'linux-' '{print$NF}')
           fi
           
           IMG_FILES=$(find "$TARGET_DIR" -type f -name "*.img.gz")
@@ -680,22 +695,31 @@ jobs:
           
           if [ -z "$REAL_KERNEL_VER" ]; then REAL_KERNEL_VER="native"; fi
           
-          OPENWRT_VER="${{ inputs.source_branch }}"
-          if [ "$OPENWRT_VER" == "master" ]; then OPENWRT_VER="R$(date +%y.%m.%d)"; fi
+          # ==================== 核心修正：绝对锁定 usr/lib/os-release ====================
+          # 只寻找真正的文本文件，抛弃 etc 下面的软链接
+          OS_RELEASE_FILE=$(find openwrt/build_dir/target-*/root-*/usr/lib/os-release -type f 2>/dev/null | head -n 1)
           
-          OS_RELEASE_FILE=$(find openwrt/build_dir/target-*/root-*/etc/os-release -type f 2>/dev/null | head -n 1)
+          REAL_ID="openwrt"
           REAL_VER=""
+          
           if [ -f "$OS_RELEASE_FILE" ]; then
-              REAL_VER=$(grep -E '^VERSION_ID=' "$OS_RELEASE_FILE" | cut -d'"' -f2)
+              # 严格提取第一个词，不看面板眼色
+              REAL_ID=$(grep -E '^OPENWRT_RELEASE=' "$OS_RELEASE_FILE" | cut -d'"' -f2 | awk '{print $1}' | tr 'A-Z' 'a-z')
+              REAL_VER=$(grep -E '^VERSION_ID=' "$OS_RELEASE_FILE" | cut -d'"' -f2 | head -n 1)
               if [ -z "$REAL_VER" ]; then
-                  REAL_VER=$(grep -E '^VERSION=' "$OS_RELEASE_FILE" | cut -d'"' -f2)
+                  REAL_VER=$(grep -E '^VERSION=' "$OS_RELEASE_FILE" | cut -d'"' -f2 | head -n 1)
               fi
           fi
-          if [ -z "$REAL_VER" ]; then REAL_VER="$OPENWRT_VER"; fi
-          echo "REAL_VER=$REAL_VER" >> packit/make.env
           
+          if [ -z "$REAL_ID" ]; then REAL_ID="openwrt"; fi
+          
+          if [ -z "$REAL_VER" ]; then REAL_VER="SNAPSHOT"; fi
+          REAL_VER=$(echo "$REAL_VER" | sed -E 's/^[vV]//' | sed -E 's/^istoreos-//')
+          
+          echo "REAL_ID=$REAL_ID" >> packit/make.env
+          echo "REAL_VER=$REAL_VER" >> packit/make.env
           echo "KERNEL_VERSION=$REAL_KERNEL_VER" >> packit/make.env
-          echo "OPENWRT_VER=$OPENWRT_VER" >> packit/make.env
+          echo "OPENWRT_VER=${{ inputs.source_branch }}" >> packit/make.env
           echo "WHOAMI=粉墨悲欢@恩山" >> packit/make.env
 
       - name: Organize Release Files
@@ -719,19 +743,25 @@ jobs:
           NOTE_SUFFIX=""
           if [ -n "$BUILD_NOTE" ]; then
              SAFE_NOTE=$(echo "$BUILD_NOTE" | sed 's/[[:space:]]/_/g')
-             # 严谨判断：只有当处理后的备注确实有字符时，才加上前面的连字符
              if [ -n "$SAFE_NOTE" ]; then
                  NOTE_SUFFIX="-${SAFE_NOTE}"
              fi
           fi
           
+          # ==================== 绝对采纳提取出的前缀 ====================
+          # 完全抛弃 env.FIRMWARE_LOWER 的参与
+          PREFIX_ID="${REAL_ID}"
+          # 清除可能带有的 '-native' 尾缀，让名字纯净
+          PREFIX_ID="${PREFIX_ID%-native}"
+          
           for img in packit/output/*.img.gz; do
-             # 严格按照格式：[源码名]-[真实版本号]-[内核]-[编译备注]_[时间戳].img.gz
-             base_name="${{ env.FIRMWARE_LOWER }}-${CLEAN_VER}-${KERNEL_VERSION}${NOTE_SUFFIX}_${DATETIME}"
+             # 严格按照格式：[提取的名字]-[真实版本号]-[内核]-[编译备注]_[时间戳].img.gz
+             base_name="${PREFIX_ID}-${CLEAN_VER}-${KERNEL_VERSION}${NOTE_SUFFIX}_${DATETIME}"
              new_img_name="${base_name}.img.gz"
              cp "$img" "release_files/$new_img_name"
              echo "✅ 准备发布镜像: $new_img_name"
           done
+          # =================================================================
           
           if [ "${{ inputs.export_config }}" == "true" ]; then
             echo "✅ 附带输出 .config 配置文件: ${base_name}.config"
@@ -755,7 +785,7 @@ jobs:
           if [ -n "${{ env.TARGET_DATE_SIMPLE }}" ]; then
               BUILD_DATE="v${{ env.TARGET_DATE_SIMPLE }}"
           else
-              if [ "$BRANCH_NAME" == "main" ] || [ "$BRANCH_NAME" == "master" ]; then
+              if [ "$BRANCH_NAME" == "main" ] \vert{}\vert{} [ "$BRANCH_NAME" == "master" ]; then
                 BUILD_DATE="v${{ env.START_DATE }}"
               else
                 if [[ "$BRANCH_NAME" != v* ]]; then
