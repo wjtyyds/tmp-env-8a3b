@@ -373,6 +373,35 @@ rm -f /etc/uci-defaults/98_lede_setup
 EOF
 fi
 
+# ====== lede-native 专属无线配置 ======
+if [ "$FIRMWARE_TYPE" == "lede-native" ]; then
+    cat << 'EOF' > ${FILES_DIR}/etc/uci-defaults/zzz_ledenative_setup
+#!/bin/sh
+# 首次开机自动唤醒 WiFi 并修改参数（后台轮询）
+(
+    for i in $(seq 1 15); do
+        if ls /sys/class/net/ | grep -q "^wlan"; then
+            break
+        fi
+        sleep 2
+    done
+    wifi config 2>/dev/null
+    uci set wireless.@wifi-device[0].country='US'
+    uci set wireless.@wifi-device[0].htmode='VHT80'
+    uci set wireless.@wifi-device[0].channel='36'
+    uci set wireless.@wifi-device[0].band='5g'
+    uci delete wireless.@wifi-device[0].disabled 2>/dev/null
+    uci set wireless.@wifi-iface[0].ssid='Phicomm_n1'
+    uci set wireless.@wifi-iface[0].encryption='psk-mixed'
+    uci set wireless.@wifi-iface[0].key='password'
+    uci delete wireless.@wifi-iface[0].disabled 2>/dev/null
+    uci commit wireless
+    wifi up 2>/dev/null
+) &
+rm -f /etc/uci-defaults/zzz_ledenative_setup
+EOF
+fi
+
 # ====== iStoreOS 修改默认原先配置设定 ======
 if [ "$FIRMWARE_TYPE" == "istoreos" ]; then
     # 💡 命名为 zzz_istoreos_setup，保证全系统绝对最后一个执行

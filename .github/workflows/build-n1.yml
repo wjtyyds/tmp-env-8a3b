@@ -613,8 +613,8 @@ jobs:
           sudo mv "$ROOTFS_FILE" ./openwrt-armvirt-64-default-rootfs.tar.gz
           
           # ==================== 核心修正：绝对锁定 usr/lib/os-release ====================
-          # 只解压压缩包内的 usr/lib/os-release 真实文件
-          OS_RELEASE_TEXT=$(tar -xOzf ./openwrt-armvirt-64-default-rootfs.tar.gz usr/lib/os-release 2>/dev/null)
+          # 终极严格模式：无视 ./ 前缀，仅匹配现代标准的 usr/lib/os-release。若不存在则直接中断打包。
+          OS_RELEASE_TEXT=$(tar -xOzf ./openwrt-armvirt-64-default-rootfs.tar.gz --wildcards '*/usr/lib/os-release' 2>/dev/null)
           
           # 提取版本号
           REAL_VER=$(echo "$OS_RELEASE_TEXT" | grep -E '^VERSION_ID=' | cut -d'"' -f2 | head -n 1)
@@ -685,10 +685,10 @@ jobs:
           
           if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ]; then
              TARGET_DIR="openwrt/bin/targets/amlogic/meson/"
-             REAL_KERNEL_VER=$(ls openwrt/build_dir/target-*/linux-amlogic_meson/linux-* -d 2>/dev/null \vert{} head -n 1 \vert{} awk -F'linux-' '{print$NF}')
+             REAL_KERNEL_VER=$(ls openwrt/build_dir/target-*/linux-amlogic_meson/linux-* -d 2>/dev/null | head -n 1 | awk -F'linux-' '{print$NF}')
           else
              TARGET_DIR="openwrt/bin/targets/amlogic/mesongx/"
-             REAL_KERNEL_VER=$(ls openwrt/build_dir/target-*/linux-amlogic_mesongx/linux-* -d 2>/dev/null \vert{} head -n 1 \vert{} awk -F'linux-' '{print$NF}')
+             REAL_KERNEL_VER=$(ls openwrt/build_dir/target-*/linux-amlogic_mesongx/linux-* -d 2>/dev/null | head -n 1 | awk -F'linux-' '{print$NF}')
           fi
           
           IMG_FILES=$(find "$TARGET_DIR" -type f -name "*.img.gz")
@@ -795,7 +795,7 @@ jobs:
           if [ -n "${{ env.TARGET_DATE_SIMPLE }}" ]; then
               BUILD_DATE="v${{ env.TARGET_DATE_SIMPLE }}"
           else
-              if [ "$BRANCH_NAME" == "main" ] \vert{}\vert{} [ "$BRANCH_NAME" == "master" ]; then
+              if [ "$BRANCH_NAME" == "main" ] || [ "$BRANCH_NAME" == "master" ]; then
                 BUILD_DATE="v${{ env.START_DATE }}"
               else
                 if [[ "$BRANCH_NAME" != v* ]]; then
