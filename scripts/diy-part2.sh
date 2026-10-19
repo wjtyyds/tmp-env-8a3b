@@ -266,6 +266,44 @@ elif [ "$FIRMWARE_TYPE" == "openwrt" ] || [ "$FIRMWARE_TYPE" == "istoreos" ]; th
 fi
 
 # ==========================================
+# 5.5 WiFi 卡顿热修复 (仅限 lede-native，且针对 2026-09-11 之前的代码)
+# ==========================================
+if [ "$FIRMWARE_TYPE" == "lede-native" ]; then
+    echo "👉 [DEBUG-SH] 检查 lede-native 专属 WiFi 卡顿热修复，TARGET_DATE_ISO: [$TARGET_DATE_ISO]"
+    if [ -n "$TARGET_DATE_ISO" ]; then
+        # 提取纯数字日期用于比较
+        COMPARE_DATE=$(echo "$TARGET_DATE_ISO" | sed -E 's/^([0-9]{4})-([0-9]{2})-([0-9]{2}).*/\1\2\3/')
+
+        if [ "$COMPARE_DATE" -lt 20260911 ]; then
+            echo "🔧 命中 lede-native 2026-09-11 之前的版本 ($COMPARE_DATE)，开始执行 mac80211 N1 WiFi 卡顿热修复..."
+
+            PATCH_FILE="package/kernel/mac80211/patches/brcm/871-brcmfmac-disable-dump_survey-on-bcm2835.patch"
+            MAKEFILE="package/kernel/mac80211/Makefile"
+
+            if [ -f "$PATCH_FILE" ]; then
+                # 替换宏定义和说明文字
+                sed -i 's/CONFIG_ARCH_BCM2835/CPTCFG_BRCMFMAC_SDIO/g' "$PATCH_FILE"
+                sed -i 's/on Raspberry Pi/if SDIO enabled/g' "$PATCH_FILE"
+                sed -i 's/on Raspberry Pi/on BRCM43455-SDIO/g' "$PATCH_FILE"
+                echo "✅ 补丁文件 $PATCH_FILE 修改成功。"
+
+                # 动态提升 Makefile 版本号触发重编译
+                if [ -f "$MAKEFILE" ]; then
+                    sed -i -E 's/(PKG_RELEASE:=)([0-9]+)/echo "\1$((\2 + 1))"/ge' "$MAKEFILE"
+                    echo "✅ Makefile 版本号提升成功。"
+                fi
+            else
+                echo "⚠️ 未找到 $PATCH_FILE，跳过热修复。"
+            fi
+        else
+            echo "🌟 当前版本 ($COMPARE_DATE) 大于或等于 2026-09-11，无需执行卡顿修复。"
+        fi
+    else
+        echo "🌟 未指定历史日期，拉取的是最新代码，无需执行卡顿修复。"
+    fi
+fi
+
+# ==========================================
 # 6. OAF 翻译缺失动态修复 (带向前兼容判断)
 # ==========================================
 echo "====== 检查并修复 OAF 翻译文件 ======"
