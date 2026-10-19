@@ -502,35 +502,50 @@ jobs:
                   grep -qi "istoreos" /etc/os-release && IS_ISTOREOS=1
           
                   if [ -f /usr/lib/adg_core/AdGuardHome ]; then
-                      if [ "$IS_EMMC" = "1" ] && [ "$IS_ISTOREOS" = "1" ] && [ -d /mnt/mmcblk2p4 ]; then
-                          # iStoreOS eMMC 专属逻辑：迁移至第四分区并去掉 _data 后缀
-                          DATA_DIR="/mnt/mmcblk2p4/AdGuardHome"
-                          mkdir -p "$DATA_DIR"
-                          cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
+                      if [ "$IS_EMMC" = "1" ]; then
+                          # 🎯 写入 eMMC 后的“转正”逻辑（阅后即焚）
           
-                          # 兜底：如果 U 盘阶段有残留的 _data 数据，顺手合并过来
+                          # 根据是否为 iStoreOS 决定最终归宿路径
+                          if [ "$IS_ISTOREOS" = "1" ]; then
+                              DATA_DIR="/opt/AdGuardHome"
+                          else
+                              # 非 iStoreOS 专属路径
+                              DATA_DIR="/mnt/mmcblk2p4/AdGuardHome"
+                          fi
+          
+                          # 预创建基础目录和 data 文件夹
+                          mkdir -p "$DATA_DIR/data"
+          
+                          # 迁移核心程序并赋予权限
+                          cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
+                          chmod 755 "$DATA_DIR/AdGuardHome"
+          
+                          # 兜底：如果 U盘阶段有残留的配置和数据，整体合并到新家的 data 目录中
                           [ -d /usr/bin/AdGuardHome_data ] && cp -rn /usr/bin/AdGuardHome_data/* "$DATA_DIR/" 2>/dev/null
           
-                          chmod 755 "$DATA_DIR/AdGuardHome"
+                          # 建立快捷方式，接管系统指向
                           rm -rf /usr/bin/AdGuardHome
                           ln -sf "$DATA_DIR" /usr/bin/AdGuardHome
           
-                          # 清理无用目录，彻底抹除痕迹
+                          # 🔥 终极阅后即焚：彻底清理旧母包和 U盘工作目录
                           rm -rf /usr/lib/adg_core
                           rm -rf /usr/bin/AdGuardHome_data
                       else
-                          # U盘引导阶段 或 其他非 iStoreOS 固件的全局通用逻辑
+                          # 💾 U盘引导阶段的通用“临时工”逻辑
                           DATA_DIR="/usr/bin/AdGuardHome_data"
                           mkdir -p "$DATA_DIR"
+          
+                          # 仅复制核心，不触发销毁
                           cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
                           chmod 755 "$DATA_DIR/AdGuardHome"
+          
                           rm -rf /usr/bin/AdGuardHome
                           ln -sf "$DATA_DIR" /usr/bin/AdGuardHome
                       fi
                       /etc/init.d/AdGuardHome restart 2>/dev/null
                   fi
           
-                  # 写入 eMMC 后阅后即焚，不留自身痕迹
+                  # 写入 eMMC 后，引导脚本自身“阅后即焚”
                   if [ "$IS_EMMC" = "1" ]; then
                       rm -f /etc/rc.d/S99ign0
                       rm -f /etc/init.d/ign0
