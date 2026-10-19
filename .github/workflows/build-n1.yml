@@ -515,19 +515,15 @@ jobs:
                     IS_EMMC=1
                   fi
           
-                  # 动态判定当前固件是否为 iStoreOS
-                  IS_ISTOREOS=0
-                  grep -qi "istoreos" /etc/os-release && IS_ISTOREOS=1
-          
                   if [ -f /usr/lib/adg_core/AdGuardHome ]; then
                       if [ "$IS_EMMC" = "1" ]; then
                           # 🎯 写入 eMMC 后的“转正”逻辑（阅后即焚）
           
-                          # 根据是否为 iStoreOS 决定最终归宿路径
-                          if [ "$IS_ISTOREOS" = "1" ]; then
+                          # 借助编译时注入的面板变量，判断是否为原生编译固件
+                          if [ "%%FIRMWARE_TYPE%%" = "istoreos" ] || [ "%%FIRMWARE_TYPE%%" = "lede-native" ]; then
                               DATA_DIR="/opt/AdGuardHome"
                           else
-                              # 非 iStoreOS 专属路径
+                              # 交叉编译（非原生）专属路径
                               DATA_DIR="/mnt/mmcblk2p4/AdGuardHome"
                           fi
           
@@ -572,6 +568,10 @@ jobs:
           }
           EOF
           chmod +x $BASE_FILES/etc/init.d/ign0
+          
+          # 👇 核心替换：将流水线面板选中的固件类型，直接烙印到启动脚本里
+          sed -i "s/%%FIRMWARE_TYPE%%/${{ env.FIRMWARE_LOWER }}/g" $BASE_FILES/etc/init.d/ign0
+          
           ln -sf ../init.d/ign0 $BASE_FILES/etc/rc.d/S99ign0
           
           cat << 'EOF' > $BASE_FILES/etc/rc.local
@@ -639,6 +639,15 @@ jobs:
           # 终极严格模式：无视 ./ 前缀，仅匹配现代标准的 usr/lib/os-release。若不存在则直接中断打包。
           OS_RELEASE_TEXT=$(tar -xOzf ./openwrt-armvirt-64-default-rootfs.tar.gz --wildcards '*/usr/lib/os-release' 2>/dev/null)
           
+          # 将 os-release 内容完整输出到日志 (全局生效)
+          echo "====== [DEBUG] 从 rootfs 提取的 os-release 内容 ======"
+          if [ -n "$OS_RELEASE_TEXT" ]; then
+            echo "$OS_RELEASE_TEXT"
+          else
+            echo "⚠️ 警告：提取到的 os-release 内容为空！请检查路径或软链接。"
+          fi
+          echo "======================================================"
+          
           # 提取版本号
           REAL_VER=$(echo "$OS_RELEASE_TEXT" | grep -E '^VERSION_ID=' | cut -d'"' -f2 | head -n 1)
           if [ -z "$REAL_VER" ]; then
@@ -647,11 +656,12 @@ jobs:
           if [ -z "$REAL_VER" ]; then REAL_VER="$OPENWRT_VER"; fi
           REAL_VER=$(echo "$REAL_VER" | sed -E 's/^[vV]//' | sed -E 's/^istoreos-//')
           
-          # 严格提取第一段字符串作为固件品牌 (ID)
-          REAL_ID=$(echo "$OS_RELEASE_TEXT" | grep -E '^OPENWRT_RELEASE=' | cut -d'"' -f2 | awk '{print $1}' | tr 'A-Z' 'a-z' | head -n 1)
-          
-          # (仅做为空情况的基础防呆，绝不再使用面板参数覆盖)
-          if [ -z "$REAL_ID" ]; then REAL_ID="openwrt"; fi 
+          # 彻底废弃从 os-release 提取前缀，直接采用流水线面板环境变量
+          if [[ "${{ env.FIRMWARE_LOWER }}" == lede* ]]; then
+            REAL_ID="lede"
+          else
+            REAL_ID="${{ env.FIRMWARE_LOWER }}"
+          fi
           
           echo "REAL_VER=$REAL_VER" >> make.env
           echo "REAL_ID=$REAL_ID" >> make.env
@@ -732,19 +742,32 @@ jobs:
           # 只寻找真正的文本文件，抛弃 etc 下面的软链接
           OS_RELEASE_FILE=$(find openwrt/build_dir/target-*/root-*/usr/lib/os-release -type f 2>/dev/null | head -n 1)
           
+          # 将 os-release 实体文件内容输出到日志 (全局生效)
+          echo "====== [DEBUG] 本地实体文件 os-release 内容 ======"
+          if [ -f "$OS_RELEASE_FILE" ]; then
+            cat "$OS_RELEASE_FILE"
+          else
+            echo "⚠️ 警告：未在 target 目录下找到 usr/lib/os-release 实体文件！"
+          fi
+          echo "=================================================="
+               
           REAL_ID="openwrt"
           REAL_VER=""
           
           if [ -f "$OS_RELEASE_FILE" ]; then
-              # 严格提取第一个词，不看面板眼色
-              REAL_ID=$(grep -E '^OPENWRT_RELEASE=' "$OS_RELEASE_FILE" | cut -d'"' -f2 | awk '{print $1}' | tr 'A-Z' 'a-z')
+              # 版本号依然老老实实从文件提取
               REAL_VER=$(grep -E '^VERSION_ID=' "$OS_RELEASE_FILE" | cut -d'"' -f2 | head -n 1)
               if [ -z "$REAL_VER" ]; then
                   REAL_VER=$(grep -E '^VERSION=' "$OS_RELEASE_FILE" | cut -d'"' -f2 | head -n 1)
               fi
           fi
           
-          if [ -z "$REAL_ID" ]; then REAL_ID="openwrt"; fi
+          # 彻底废弃从 os-release 提取前缀，直接采用流水线面板环境变量
+          if [[ "${{ env.FIRMWARE_LOWER }}" == lede* ]]; then
+              REAL_ID="lede"
+          else
+              REAL_ID="${{ env.FIRMWARE_LOWER }}"
+          fi
           
           if [ -z "$REAL_VER" ]; then REAL_VER="SNAPSHOT"; fi
           REAL_VER=$(echo "$REAL_VER" | sed -E 's/^[vV]//' | sed -E 's/^istoreos-//')
