@@ -53,25 +53,17 @@ jobs:
           make download -j8
           make -j$(nproc) || make -j1 V=s
 
-      - name: Package Firmware (N1)
+      - name: Extract Native Firmware (提取原生直出镜像)
         run: |
-          echo "使用基础包打包为 N1 镜像..."
-          git clone https://github.com/unifreq/openwrt_packit packit
-          cd packit
-          
-          sudo mkdir -p /opt/kernel
-          wget "https://github.com/wjtyyds/amlogic-s9xxx-armbian/releases/download/kernel_stable/6.18.57.tar.gz"
-          tar -xzf 6.18.57.tar.gz -C /opt/kernel/
-          sudo mv /opt/kernel/6.18.57/* /opt/kernel/
-
-          ROOTFS_FILE=$(find ../openwrt/bin/targets/ -type f -name "*-rootfs.tar.gz" | head -n 1)
-          sudo mv "$ROOTFS_FILE" ./openwrt-armvirt-64-default-rootfs.tar.gz
-
-          sudo ./mk_s905d_n1.sh
-          sudo gzip -9 output/*.img
+          echo "直接提取原生生成的镜像，抛弃繁琐的 packit 打包..."
+          mkdir -p firmware_output
+          # 原生编译生成的 img.gz 会自动存放在 bin/targets 目录下
+          find openwrt/bin/targets/ -type f -name "*.img.gz" -exec cp {} firmware_output/ \;
+          echo "提取到的文件列表："
+          ls -lh firmware_output/
 
       - name: Upload Firmware
         uses: actions/upload-artifact@v4
         with:
-          name: Pure-LEDE-N1-Firmware
-          path: packit/output/*.img.gz
+          name: Pure-LEDE-N1-Native
+          path: firmware_output/*.img.gz
