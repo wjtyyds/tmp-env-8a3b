@@ -550,3 +550,37 @@ uci commit AdGuardHome
 rm -f /etc/uci-defaults/97_personal_setup
 EOF
 fi
+
+# ==========================================
+# 8. 编译期注入：强制旁路由 LAN 开启 FullCone NAT1 (仅限 OpenWrt)
+# ==========================================
+if [ "$FIRMWARE_TYPE" == "openwrt" ]; then
+    echo "====== 注入 OpenWrt 专属 FullCone NAT1 防火墙劫持规则 ======"
+    mkdir -p package/base-files/files/etc/uci-defaults
+
+    # 1. 直接在固件源码中生成 /etc/firewall.user 文件
+    cat << "EOF" > package/base-files/files/etc/firewall.user
+# --- 强制 LAN 区域使用 Fullcone (优先覆盖 fw4 默认的 Masquerade) ---
+nft insert rule inet fw4 srcnat oifname "br-lan" meta nfproto ipv4 fullcone 2>/dev/null
+nft insert rule inet fw4 dstnat iifname "br-lan" meta nfproto ipv4 fullcone 2>/dev/null
+EOF
+    chmod +x package/base-files/files/etc/firewall.user
+
+    # 2. 写入首次开机初始化脚本 (uci-defaults)，自动将其挂载到防火墙
+    cat << 'EOF' > package/base-files/files/etc/uci-defaults/99_custom_fullcone
+#!/bin/sh
+# 检查是否已经挂载了防火墙自定义脚本
+if ! uci show firewall | grep -q "path='/etc/firewall.user'"; then
+    uci add firewall include
+    uci set firewall.@include[-1].type='script'
+    uci set firewall.@include[-1].path='/etc/firewall.user'
+    uci set firewall.@include[-1].fw4_compatible='1'
+    uci commit firewall
+fi
+# 脚本使命完成，自毁（阅后即焚，不留垃圾）
+rm -f /etc/uci-defaults/99_custom_fullcone
+EOF
+    chmod +x package/base-files/files/etc/uci-defaults/99_custom_fullcone
+else
+    echo "🌟 当前编译非 OpenWrt ($FIRMWARE_TYPE)，跳过 FullCone 强制注入脚本。"
+fi
