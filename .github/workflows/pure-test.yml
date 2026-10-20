@@ -1,0 +1,77 @@
+name: Pure LEDE Test Build
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Init Build Environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y purge azure-cli ghc* zulu* llvm* firefox google* dotnet* powershell openjdk* mongodb* moby* || true
+          sudo apt-get -y install clang llvm jq dwarves libelf-dev $(curl -fsSL https://ophub.org/ubuntu2204-make-openwrt-depends)
+          sudo apt-get -y autoremove --purge && sudo apt-get clean
+
+      - name: Clone LEDE Master
+        run: |
+          echo "拉取大雕最新原版源码..."
+          git clone --depth 1 https://github.com/coolsnowwolf/lede.git openwrt
+
+      - name: Update & Install Feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Load Pure Config
+        run: |
+          echo "应用纯净版 .config 配置..."
+          cp configs/pure-lede.config openwrt/.config
+          cd openwrt
+          make defconfig
+
+      - name: Download Package & Compile
+        run: |
+          cd openwrt
+          make download -j8
+          make -j$(nproc) || make -j1 V=s
+
+      - name: Package Firmware (N1)
+        run: |
+          echo "使用基础包打包为 N1 镜像..."
+          git clone https://github.com/unifreq/openwrt_packit packit
+          cd packit
+          
+          sudo mkdir -p /opt/kernel
+          wget "https://github.com/wjtyyds/amlogic-s9xxx-armbian/releases/download/kernel_stable/6.18.57.tar.gz"
+          tar -xzf 6.18.57.tar.gz -C /opt/kernel/
+          sudo mv /opt/kernel/6.18.57/* /opt/kernel/
+
+          ROOTFS_FILE=$(find ../openwrt/bin/targets/ -type f -name "*-rootfs.tar.gz" | head -n 1)
+          sudo mv "$ROOTFS_FILE" ./openwrt-armvirt-64-default-rootfs.tar.gz
+
+          sudo ./mk_s905d_n1.sh
+          sudo gzip -9 output/*.img
+
+      - name: Upload Firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pure-LEDE-N1-Firmware
+          path: packit/output/*.img.gz
