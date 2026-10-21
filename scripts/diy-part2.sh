@@ -350,8 +350,28 @@ rm -f /etc/uci-defaults/98_lede_setup
 EOF
 fi
 
-# ====== lede-native 专属 SSH 欢迎界面与无线配置 ======
+# ====== lede-native 专属综合配置 (编译期注入 + 首次开机运行) ======
 if [ "$FIRMWARE_TYPE" == "lede-native" ]; then
+
+    # ----------------------------------------------------------------
+    # 1. [编译期执行]：强制开启 Amlogic 底层温度传感器驱动
+    # 作用：在打包前修改内核模板，让固件原生带温度节点 /sys/class/thermal/...
+    # ----------------------------------------------------------------
+    echo "====== [lede-native] 强注 Amlogic 底层温度传感器驱动 ======"
+    find target/linux/amlogic/ -type f -name "config-*" | while read conf_file; do
+        echo "CONFIG_THERMAL=y" >> "$conf_file"
+        echo "CONFIG_THERMAL_OF=y" >> "$conf_file"
+        echo "CONFIG_AMLOGIC_THERMAL=y" >> "$conf_file"
+        echo "CONFIG_MESON_THERMAL=y" >> "$conf_file"
+        echo "CONFIG_SENSORS_ARM_SCPI=y" >> "$conf_file"
+        echo "CONFIG_HWMON=y" >> "$conf_file"
+        echo "✅ 已向 $conf_file 注入温度驱动"
+    done
+
+    # ----------------------------------------------------------------
+    # 2. [运行期执行]：生成首次开机脚本 (SSH 欢迎界面与无线配置)
+    # 作用：写入 /etc/uci-defaults，等路由器刷机后第一次通电时执行
+    # ----------------------------------------------------------------
     cat << 'EOF' > ${FILES_DIR}/etc/uci-defaults/zzz_ledenative_setup
 #!/bin/sh
 
@@ -388,6 +408,7 @@ cat /etc/banner
 
 rm -f /etc/uci-defaults/zzz_ledenative_setup
 EOF
+
 fi
 
 # ====== iStoreOS 修改默认原先配置设定 ======
