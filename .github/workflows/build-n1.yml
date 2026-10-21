@@ -162,22 +162,16 @@ jobs:
               # 将日期转换为 8 位纯数字用于大小比对（如 20260916）
               COMPARE_DATE="${YEAR}${MONTH}${DAY}"
           
-              if [ "${{ env.FIRMWARE_LOWER }}" == "lede-native" ]; then
-                # 【lede-native 专属逻辑】判断是否处于 6.18 内核的 Bug 爆发期 (9月11日 ~ 10月18日)
-                if [ "$COMPARE_DATE" -ge 20260911 ] && [ "$COMPARE_DATE" -le 20261018 ]; then
-                  echo "⚡ 检测到 lede-native 落在 6.18 内核 Bug 期 ($COMPARE_DATE)！"
-                  echo "👉 智能修正：主源码强制拉升至无 Bug 的 2026-10-19，插件将保持回滚至 $COMPARE_DATE..."
-                  # 设定一个安全的修复日作为主源码提取线
-                  SAFE_DATE="2026-10-19T15:59:59Z"
-                  API_URL="https://api.github.com/repos/coolsnowwolf/lede/commits?sha=${{ inputs.source_branch }}&until=$SAFE_DATE&per_page=1"
-                else
-                  # 早于 9月11日，或晚于 10月18日，都是安全的，正常回滚主源码
-                  echo "⏳ 正常触发 lede-native 主源码时光机 ($COMPARE_DATE)..."
-                  API_URL="https://api.github.com/repos/coolsnowwolf/lede/commits?sha=${{ inputs.source_branch }}&until=$TARGET_DATE&per_page=1"
-                fi
+              # 【LEDE 源码全局修正逻辑】
+              # 只要设定的日期早于或等于 2026年10月21日，主源码强制拉升到 10月21日的最后时刻 (23:59:59)
+              if [ "$COMPARE_DATE" -le 20261021 ]; then
+                echo "⚡ 检测到 LEDE 源码选择在 10月21日 或之前 ($COMPARE_DATE)！"
+                echo "👉 智能修正：主源码强制拉升至无 Bug 的 2026-10-21 最新，插件将保持回滚至 $COMPARE_DATE..."
+                SAFE_DATE="2026-10-21T23:59:59Z"
+                API_URL="https://api.github.com/repos/coolsnowwolf/lede/commits?sha=${{ inputs.source_branch }}&until=$SAFE_DATE&per_page=1"
               else
-                # 【普通 lede 逻辑】原封不动，老老实实回滚主源码
-                echo "⏳ 触发 Lede 主源码时光机 ($COMPARE_DATE)..."
+                # 晚于 10月21日，官方已彻底修复，正常回滚主源码
+                echo "⏳ 正常触发 LEDE 主源码时光机 ($COMPARE_DATE)..."
                 API_URL="https://api.github.com/repos/coolsnowwolf/lede/commits?sha=${{ inputs.source_branch }}&until=$TARGET_DATE&per_page=1"
               fi
           
