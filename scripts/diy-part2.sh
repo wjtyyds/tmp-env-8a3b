@@ -165,29 +165,6 @@ if [ "$BUILD_TYPE" == "public" ]; then
         echo "✅ [DEBUG-SH] 未命中 09.09 拦截，拉取 Passwall。"
         clone_time_machine "https://github.com/Openwrt-Passwall/openwrt-passwall-packages" "passwall-packages" "$TARGET_DATE_ISO" "true"
         clone_time_machine "https://github.com/Openwrt-Passwall/openwrt-passwall" "passwall-luci" "$TARGET_DATE_ISO"
-
-        # -----------------------------------------------------------
-        # 👇 针对 dns2socks 404 死链的单点智能修复 (先探活再修改)
-        # -----------------------------------------------------------
-        DNS2SOCKS_MK="package/custom/passwall-packages/dns2socks/Makefile"
-        if [ -f "$DNS2SOCKS_MK" ]; then
-            echo "🔍 [DEBUG-SH] 正在探测 dns2socks 官方源码包链接是否存活..."
-            # GitHub Release 附件的完整下载链接
-            TEST_URL="https://github.com/Openwrt-Passwall/openwrt-passwall-packages/releases/download/dns2socks/SourceCode.zip"
-            # 仅获取 HTTP 状态码，不下载文件
-            HTTP_STATUS=$(curl -I -L -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$TEST_URL")
-
-            if [ "$HTTP_STATUS" != "200" ]; then
-                echo "⚠️ [DEBUG-SH] dns2socks 原下载链接已失效 (状态码: $HTTP_STATUS)！"
-                echo "🔧 [DEBUG-SH] 执行热修复：正在将 Makefile 下载地址替换为 ImmortalWrt 缓存库..."
-                sed -i 's|PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://sources.immortalwrt.org|g' "$DNS2SOCKS_MK"
-                echo "✅ [DEBUG-SH] dns2socks 死链修复完成！"
-            else
-                echo "🌟 [DEBUG-SH] dns2socks 原始链接存活正常 (状态码: $HTTP_STATUS)，保留原配置跳过修复。"
-            fi
-        fi
-        # -----------------------------------------------------------
-
     else
         echo "⛔ [DEBUG-SH] 命中 09.09，拦截 Passwall 拉取！"
     fi

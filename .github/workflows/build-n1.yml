@@ -309,6 +309,10 @@ jobs:
           sed -i 's/CONFIG_PACKAGE_shadowsocks-rust-sslocal=y/# CONFIG_PACKAGE_shadowsocks-rust-sslocal is not set/g' openwrt/.config
           echo "CONFIG_DEVEL=y" >> openwrt/.config
           echo "CONFIG_BPF_TOOLCHAIN_HOST=y" >> openwrt/.config
+          
+          # 开启全局 ImmortalWrt 兜底
+          sed -i '/CONFIG_LOCALMIRROR/d' openwrt/.config
+          echo 'CONFIG_LOCALMIRROR="https://sources.immortalwrt.org"' >> openwrt/.config
 
           echo "====== 注入全局基础定制插件 ======"
           cat >> openwrt/.config <<EOF
