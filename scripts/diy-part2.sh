@@ -373,10 +373,20 @@ rm -f /etc/uci-defaults/98_lede_setup
 EOF
 fi
 
-# ====== lede-native 专属无线配置 ======
+# ====== lede-native 专属 SSH 欢迎界面与无线配置 ======
 if [ "$FIRMWARE_TYPE" == "lede-native" ]; then
     cat << 'EOF' > ${FILES_DIR}/etc/uci-defaults/zzz_ledenative_setup
 #!/bin/sh
+
+# ================= 用户绝密自定义 Banner 指令 (原封不动执行) =================
+cp /rom/etc/banner /etc/banner 2>/dev/null
+VER_STR=$(grep -oE 'OpenWrt.*' /etc/banner)
+sed -i 's|\\    LE  \\    /.*|\\    LE  \\    /   Compiled by 粉墨悲欢@恩山|g' /etc/banner
+sed -i 's|\\  DE    \\  /.*|\\  DE    \\  /   -------------------------------------------|g' /etc/banner
+sed -i 's|\\________\\/.*|\\________\\/     '"$VER_STR"'\n                   -------------------------------------------|g' /etc/banner
+cat /etc/banner
+# =============================================================================
+
 # 首次开机自动唤醒 WiFi 并修改参数（后台轮询）
 (
     for i in $(seq 1 15); do
@@ -398,6 +408,7 @@ if [ "$FIRMWARE_TYPE" == "lede-native" ]; then
     uci commit wireless
     wifi up 2>/dev/null
 ) &
+
 rm -f /etc/uci-defaults/zzz_ledenative_setup
 EOF
 fi
