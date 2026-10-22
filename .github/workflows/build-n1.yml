@@ -242,6 +242,26 @@ jobs:
           # 【核心修复】：如果当前没有 feeds.conf (例如LEDE)，则从 default 复制，防破坏原文件
           [ ! -f feeds.conf ] && cp feeds.conf.default feeds.conf
           
+          # ================= 👇 新增这块代码：动态展平 src-include 👇 =================
+          if grep -q "^src-include" feeds.conf; then
+              echo "🔧 [时光机兼容] 检测到 src-include，正在将其内容展平至 feeds.conf..."
+              mv feeds.conf feeds.conf.tmp
+              while IFS= read -r inc_line; do
+                  # 匹配 src-include 并提取第三个参数（即文件名，如 feeds.conf.default）
+                  if echo "$inc_line" | grep -q "^src-include"; then
+                      inc_file=$(echo "$inc_line" | awk '{print $3}')
+                      if [ -f "$inc_file" ]; then
+                          echo "  - 成功展开并注入: $inc_file"
+                          cat "$inc_file" >> feeds.conf
+                      fi
+                  else
+                      echo "$inc_line" >> feeds.conf
+                  fi
+              done < feeds.conf.tmp
+              rm -f feeds.conf.tmp
+          fi
+          # ================= 👆 新增结束 👆 =================
+          
           if [ -n "$TARGET_DATE_ISO" ]; then
               echo "========================================================="
               echo "⏳ 触发 Feeds 全局极致时光机 (目标日期: $TARGET_DATE_ISO)"
