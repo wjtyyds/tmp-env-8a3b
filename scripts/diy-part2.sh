@@ -243,7 +243,7 @@ if [[ "$FIRMWARE_TYPE" == lede* ]]; then
 
      	err = wiphy_register(wiphy);
      	if (err < 0) {
-    EOF
+EOF
                 echo "✅ 6.6 内核补丁覆盖完毕"
 
             elif [[ "$TARGET_DATE_ISO" == *"2026-09-16"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-10-11"* ]]; then
