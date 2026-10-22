@@ -129,7 +129,11 @@ jobs:
               echo "⚡ 检测到 iStoreOS 特定版本 ($CUSTOM_TAG)，强制锁定至 10 月 12 日安全节点！"
               TARGET_DATE="2026-10-12T15:59:59Z"
               echo "TARGET_DATE_ISO=$TARGET_DATE" >> $GITHUB_ENV
-              echo "TARGET_DATE_SIMPLE=2026.10.12" >> $GITHUB_ENV
+          
+              # 动态提取输入的原始标签日期，防止 Release 标题被覆盖为 v2026.10.12
+              if [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
+                echo "TARGET_DATE_SIMPLE=20${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}" >> $GITHUB_ENV
+              fi
           
               echo "⏳ 触发 iStoreOS 时光机：正在查找 $BASE_BRANCH 分支在 $TARGET_DATE 之前的最后一次提交..."
               API_URL="https://api.github.com/repos/istoreos/istoreos/commits?sha=$BASE_BRANCH&until=$TARGET_DATE&per_page=1"
