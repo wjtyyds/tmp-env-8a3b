@@ -125,7 +125,22 @@ jobs:
             REPO_URL="https://github.com/istoreos/istoreos.git"
             BASE_BRANCH="${{ inputs.source_branch }}"
           
-            if [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
+            if [[ "$CUSTOM_TAG" == "R26.09.16" ]] || [[ "$CUSTOM_TAG" == "R26.10.11" ]]; then
+              echo "⚡ 检测到 iStoreOS 特定版本 ($CUSTOM_TAG)，强制锁定至 10 月 12 日安全节点！"
+              TARGET_DATE="2026-10-12T15:59:59Z"
+              echo "TARGET_DATE_ISO=$TARGET_DATE" >> $GITHUB_ENV
+              echo "TARGET_DATE_SIMPLE=2026.10.12" >> $GITHUB_ENV
+          
+              echo "⏳ 触发 iStoreOS 时光机：正在查找 $BASE_BRANCH 分支在 $TARGET_DATE 之前的最后一次提交..."
+              API_URL="https://api.github.com/repos/istoreos/istoreos/commits?sha=$BASE_BRANCH&until=$TARGET_DATE&per_page=1"
+              API_RESP=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
+              TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null || true)
+          
+              if [ "$TARGET_BRANCH" == "null" ] || [ -z "$TARGET_BRANCH" ]; then
+                echo "⚠️ 时光机未找到符合条件的提交，将拉取分支的最新代码！"
+                TARGET_BRANCH="$BASE_BRANCH"
+              fi
+            elif [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
               YEAR="20${BASH_REMATCH[1]}"
               MONTH="${BASH_REMATCH[2]}"
               DAY="${BASH_REMATCH[3]}"
@@ -135,7 +150,7 @@ jobs:
           
               echo "⏳ 触发 iStoreOS 时光机：正在查找 $BASE_BRANCH 分支在 $TARGET_DATE 之前的最后一次提交..."
               API_URL="https://api.github.com/repos/istoreos/istoreos/commits?sha=$BASE_BRANCH&until=$TARGET_DATE&per_page=1"
-              API_RESP=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
+              API_RESP=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
               TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null || true)
           
               if [ "$TARGET_BRANCH" == "null" ] || [ -z "$TARGET_BRANCH" ]; then
@@ -333,6 +348,8 @@ jobs:
           GH_TOKEN: ${{ secrets.PRIVATE_TOKEN }}
           TARGET_DATE_ISO: ${{ env.TARGET_DATE_ISO }}
           TARGET_DATE_SIMPLE: ${{ env.TARGET_DATE_SIMPLE }}
+          # 把最原始的面板输入值传给 sh 脚本
+          CUSTOM_TAG: ${{ inputs.custom_tag }}
         run: |
           cd openwrt
           chmod +x $GITHUB_WORKSPACE/scripts/diy-part2.sh
@@ -342,11 +359,7 @@ jobs:
         run: |
           CONF_NAME="${{ env.FIRMWARE_LOWER }}"
           
-          # 针对 9月9日的 lede-native 执行配置切换
-          if [ "${CONF_NAME}" == "lede-native" ] && [[ "${{ env.TARGET_DATE_ISO }}" == *"2026-09-09"* ]]; then
-            echo "====== 9月9日专属：加载降级内核配置 lede-6_6.config ======"
-            cp configs/lede-6_6.config openwrt/.config
-          elif [ ! -f "configs/${CONF_NAME}.config" ] && [[ "${CONF_NAME}" == "lede-native" ]]; then
+          if [ ! -f "configs/${CONF_NAME}.config" ] && [[ "${CONF_NAME}" == "lede-native" ]]; then
             echo "未找到 lede-native.config，降级使用共用的 lede.config..."
             cp configs/lede.config openwrt/.config
           else

@@ -204,7 +204,7 @@ if [[ "$FIRMWARE_TYPE" == lede* ]]; then
     find package/custom/luci-theme-aurora -name "footer.ut" -exec sed -i 's/({{ version.distrevision }})/{% if (version.distrevision): %} ({{ version.distrevision }}){% endif %}/g' {} +
 
     # ================= 专属底层修复补丁 (严格控制作用域) =================
-    if [ "$FIRMWARE_TYPE" == "lede-native" ] && { [[ "$TARGET_DATE_ISO" == *"2026-09-16"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-10-11"* ]]; }; then
+    if [ "$FIRMWARE_TYPE" == "lede-native" ] && { [[ "$TARGET_DATE_ISO" == *"2026-09-09"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-09-16"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-10-11"* ]]; }; then
         echo "====== 仅针对 lede-native 特定日期 (${TARGET_DATE_ISO:0:10}) 注入底层修复补丁 ======"
 
         # 1. 修复 mac80211 brcmfmac SDIO 导致 iwinfo 和 LuCI 卡顿的问题
@@ -590,13 +590,20 @@ fi
 # ==========================================
 # 9. 针对 R26.10.11 强制使用预编译的 xray 核心，完全跳过源码下载与编译
 # ==========================================
-if [[ "$TARGET_DATE_ISO" == *"2026-10-11"* ]]; then
+if [[ "$TARGET_DATE_ISO" == *"2026-10-11"* ]] || [[ "$CUSTOM_TAG" == "R26.10.11" ]]; then
     echo "====== 触发 R26.10.11 专属逻辑：替换 xray-core Makefile 为本地直装模式 ======"
 
     XRAY_MK_PATH="package/custom/passwall-packages/xray-core/Makefile"
 
+    # 智能识别底层架构，分配对应的本地二进制文件
+    if [[ "$FIRMWARE_TYPE" == "openwrt" ]] || [[ "$FIRMWARE_TYPE" == "immortalwrt" ]]; then
+        XRAY_ARCH="aarch64_generic"
+    else
+        XRAY_ARCH="aarch64_cortex-a53"
+    fi
+
     # 确保本地提取的文件存在于仓库的 auto_import 目录中
-    XRAY_LOCAL_FILE="$GITHUB_WORKSPACE/auto_import/xray-aarch64_cortex-a53-26.10.10"
+    XRAY_LOCAL_FILE="$GITHUB_WORKSPACE/auto_import/xray-${XRAY_ARCH}-26.10.10"
 
     if [ -f "$XRAY_MK_PATH" ]; then
         # 覆写整个 Makefile，彻底剥离 golang 编译依赖和下载链接
@@ -632,7 +639,7 @@ endef
 
 \$(eval \$(call BuildPackage,xray-core))
 EOF
-        echo "✅ xray-core Makefile 已成功被替换为本地直装模式！"
+        echo "✅ xray-core Makefile 已成功被替换为本地直装模式 (架构: ${XRAY_ARCH})！"
     else
         echo "⚠️ 未找到 xray-core Makefile 路径: $XRAY_MK_PATH"
     fi
