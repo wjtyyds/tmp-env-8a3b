@@ -492,8 +492,8 @@ jobs:
           echo "====== 原生编译：前置注入最新内核与私密配置 ======"
           BASE_FILES="openwrt/package/base-files/files"
           
-          # 【修改点1】：抛弃 adg_core，直接建好 U盘阶段的最终工作目录
-          mkdir -p $BASE_FILES/usr/bin/AdGuardHome_data
+          mkdir -p $BASE_FILES/usr/lib/adg_core
+          mkdir -p $BASE_FILES/usr/bin
           mkdir -p $BASE_FILES/etc/openclash/core
           mkdir -p $BASE_FILES/etc/init.d
           mkdir -p $BASE_FILES/etc/rc.d
@@ -511,11 +511,8 @@ jobs:
               echo "✅ 锁定 AdGuardHome 稳定版链接: $AGH_URL"
               wget -qO /tmp/agh.tar.gz "$AGH_URL"
               tar -xzf /tmp/agh.tar.gz -C /tmp/
-          
-              # 【修改点2】：直接提取裸核放进最终数据区，并提前做好软链接，U盘阶段无需脚本干预直接可用
-              mv /tmp/AdGuardHome/AdGuardHome $BASE_FILES/usr/bin/AdGuardHome_data/
-              chmod 755 $BASE_FILES/usr/bin/AdGuardHome_data/AdGuardHome
-              ln -sf /usr/bin/AdGuardHome_data $BASE_FILES/usr/bin/AdGuardHome
+              mv /tmp/AdGuardHome/AdGuardHome $BASE_FILES/usr/lib/adg_core/
+              chmod 755 $BASE_FILES/usr/lib/adg_core/AdGuardHome
           fi
           
           echo "提取 Lucky 并进行源码级劫持..."
@@ -582,24 +579,51 @@ jobs:
                     IS_EMMC=1
                   fi
           
-                  if [ "$IS_EMMC" = "1" ] && [ -d /usr/bin/AdGuardHome_data ]; then
+                  if [ -f /usr/lib/adg_core/AdGuardHome ]; then
+                      if [ "$IS_EMMC" = "1" ]; then
+                          # 🎯 写入 eMMC 后的“转正”逻辑（阅后即焚）
           
-                      if [ "%%FIRMWARE_TYPE%%" = "istoreos" ] || [ "%%FIRMWARE_TYPE%%" = "lede-native" ]; then
-                          DATA_DIR="/opt/AdGuardHome"
-                          mkdir -p /opt
+                          # 借助编译时注入的面板变量，判断是否为原生编译固件
+                          if [ "%%FIRMWARE_TYPE%%" = "istoreos" ] || [ "%%FIRMWARE_TYPE%%" = "lede-native" ]; then
+                              DATA_DIR="/opt/AdGuardHome"
+                          else
+                              # 交叉编译（非原生）专属路径
+                              DATA_DIR="/mnt/mmcblk2p4/AdGuardHome"
+                          fi
+          
+                          # 预创建基础目录和 data 文件夹
+                          mkdir -p "$DATA_DIR/data"
+          
+                          # 迁移核心程序并赋予权限
+                          cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
+                          chmod 755 "$DATA_DIR/AdGuardHome"
+          
+                          # 兜底：如果 U盘阶段有残留的配置和数据，整体合并到新家的 data 目录中
+                          [ -d /usr/bin/AdGuardHome_data ] && cp -rn /usr/bin/AdGuardHome_data/* "$DATA_DIR/" 2>/dev/null
+          
+                          # 建立快捷方式，接管系统指向
+                          rm -rf /usr/bin/AdGuardHome
+                          ln -sf "$DATA_DIR" /usr/bin/AdGuardHome
+          
+                          # 🔥 终极阅后即焚：彻底清理旧母包和 U盘工作目录
+                          rm -rf /usr/lib/adg_core
+                          rm -rf /usr/bin/AdGuardHome_data
                       else
-                          DATA_DIR="/mnt/mmcblk2p4/AdGuardHome"
-                          mkdir -p /mnt/mmcblk2p4
+                          # 💾 U盘引导阶段的通用“临时工”逻辑
+                          DATA_DIR="/usr/bin/AdGuardHome_data"
+                          mkdir -p "$DATA_DIR"
+          
+                          # 仅复制核心，不触发销毁
+                          cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
+                          chmod 755 "$DATA_DIR/AdGuardHome"
+          
+                          rm -rf /usr/bin/AdGuardHome
+                          ln -sf "$DATA_DIR" /usr/bin/AdGuardHome
                       fi
-          
-                      mv /usr/bin/AdGuardHome_data "$DATA_DIR"
-          
-                      rm -rf /usr/bin/AdGuardHome
-                      ln -sf "$DATA_DIR" /usr/bin/AdGuardHome
-          
                       /etc/init.d/AdGuardHome restart 2>/dev/null
                   fi
           
+                  # 写入 eMMC 后，引导脚本自身“阅后即焚”
                   if [ "$IS_EMMC" = "1" ]; then
                       rm -f /etc/rc.d/S99ign0
                       rm -f /etc/init.d/ign0
