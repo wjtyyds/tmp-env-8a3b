@@ -586,3 +586,54 @@ EOF
 else
     echo "🌟 当前编译非 OpenWrt ($FIRMWARE_TYPE)，跳过 FullCone 强制注入脚本。"
 fi
+
+# ==========================================
+# 9. 针对 R26.10.11 强制使用预编译的 xray 核心，完全跳过源码下载与编译
+# ==========================================
+if [[ "$TARGET_DATE_ISO" == *"2026-10-11"* ]]; then
+    echo "====== 触发 R26.10.11 专属逻辑：替换 xray-core Makefile 为本地直装模式 ======"
+
+    XRAY_MK_PATH="package/custom/passwall-packages/xray-core/Makefile"
+
+    # 确保本地提取的文件存在于仓库的 auto_import 目录中
+    XRAY_LOCAL_FILE="$GITHUB_WORKSPACE/auto_import/xray-aarch64_cortex-a53-26.10.10"
+
+    if [ -f "$XRAY_MK_PATH" ]; then
+        # 覆写整个 Makefile，彻底剥离 golang 编译依赖和下载链接
+        cat << EOF > "$XRAY_MK_PATH"
+include \$(TOPDIR)/rules.mk
+
+PKG_NAME:=xray-core
+PKG_VERSION:=26.10.10
+PKG_RELEASE:=1
+
+include \$(INCLUDE_DIR)/package.mk
+
+define Package/xray-core
+  SECTION:=net
+  CATEGORY:=Network
+  TITLE:=Xray (Pre-compiled local version)
+  DEPENDS:=+ca-bundle
+endef
+
+# 清空下载和解压阶段，什么都不做
+define Build/Prepare
+endef
+
+# 清空编译阶段，跳过 Golang 编译
+define Build/Compile
+endef
+
+# 安装阶段：直接从你的 auto_import 拷贝现成文件到固件的 /usr/bin/xray
+define Package/xray-core/install
+	\$(INSTALL_DIR) \$(1)/usr/bin/
+	\$(INSTALL_BIN) $XRAY_LOCAL_FILE \$(1)/usr/bin/xray
+endef
+
+\$(eval \$(call BuildPackage,xray-core))
+EOF
+        echo "✅ xray-core Makefile 已成功被替换为本地直装模式！"
+    else
+        echo "⚠️ 未找到 xray-core Makefile 路径: $XRAY_MK_PATH"
+    fi
+fi
