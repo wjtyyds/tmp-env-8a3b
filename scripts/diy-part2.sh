@@ -204,21 +204,58 @@ if [[ "$FIRMWARE_TYPE" == lede* ]]; then
     find package/custom/luci-theme-aurora -name "footer.ut" -exec sed -i 's/({{ version.distrevision }})/{% if (version.distrevision): %} ({{ version.distrevision }}){% endif %}/g' {} +
 
     # ================= 专属底层修复补丁 (严格控制作用域) =================
-    if [ "$FIRMWARE_TYPE" == "lede-native" ] && { [[ "$TARGET_DATE_ISO" == *"2026-09-09"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-09-16"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-10-11"* ]]; }; then
-        echo "====== 仅针对 lede-native 特定日期 (${TARGET_DATE_ISO:0:10}) 注入底层修复补丁 ======"
+        if [ "$FIRMWARE_TYPE" == "lede-native" ]; then
+            MAC_MK="package/kernel/mac80211/Makefile"
+            MAC_PATCH="package/kernel/mac80211/patches/brcm/871-brcmfmac-disable-dump_survey-on-bcm2835.patch"
 
-        # 1. 修复 mac80211 brcmfmac SDIO 导致 iwinfo 和 LuCI 卡顿的问题
-        MAC_MK="package/kernel/mac80211/Makefile"
-        MAC_PATCH="package/kernel/mac80211/patches/brcm/871-brcmfmac-disable-dump_survey-on-bcm2835.patch"
-        if [ -f "$MAC_MK" ]; then
-            sed -i 's/PKG_RELEASE:=3/PKG_RELEASE:=4/g' "$MAC_MK"
-        fi
-        if [ -f "$MAC_PATCH" ]; then
-            sed -i 's/on Raspberry Pi/if SDIO enabled/g' "$MAC_PATCH"
-            sed -i 's/on Raspberry Pi and LuCI/on BRCM43455-SDIO and LuCI/g' "$MAC_PATCH"
-            sed -i 's/CONFIG_ARCH_BCM2835/CPTCFG_BRCMFMAC_SDIO/g' "$MAC_PATCH"
-            echo "✅ 已注入 Mac80211 SDIO 性能修复补丁"
-        fi
+            if [[ "$TARGET_DATE_ISO" == *"2026-09-09"* ]]; then
+                echo "====== [6.6内核专属] 强行注入 iStoreOS 版 SDIO 卡顿修复补丁 ======"
+                if [ -f "$MAC_MK" ]; then sed -i 's/PKG_RELEASE:=3/PKG_RELEASE:=4/g' "$MAC_MK"; fi
+
+                # 直接覆写针对 6.6 内核行号（7990/8378）的补丁
+                cat << 'EOF' > "$MAC_PATCH"
+    --- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
+    +++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/cfg80211.c
+    @@ -7990,6 +7990,7 @@ static s32 brcmf_translate_country_code(
+     	return 0;
+     }
+
+    +#if !defined(CPTCFG_BRCMFMAC_SDIO)
+     static int
+     brcmf_parse_dump_obss(char *buf, struct brcmf_dump_survey *survey)
+     {
+    @@ -8212,6 +8213,7 @@ exit:
+     		brcmf_set_mpc(ifp, 1);
+     	return err;
+     }
+    +#endif /* CPTCFG_BRCMFMAC_SDIO */
+
+     static void brcmf_cfg80211_reg_notifier(struct wiphy *wiphy,
+     					struct regulatory_request *req)
+    @@ -8378,8 +8380,10 @@ struct brcmf_cfg80211_info *brcmf_cfg802
+     	if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_WOWL_GTK))
+     		ops->set_rekey_data = brcmf_cfg80211_set_rekey_data;
+     #endif
+    +#if !defined(CPTCFG_BRCMFMAC_SDIO)
+     	if (brcmf_feat_is_enabled(ifp, BRCMF_FEAT_DUMP_OBSS))
+     		ops->dump_survey = brcmf_cfg80211_dump_survey;
+    +#endif /* CPTCFG_BRCMFMAC_SDIO */
+
+     	err = wiphy_register(wiphy);
+     	if (err < 0) {
+    EOF
+                echo "✅ 6.6 内核补丁覆盖完毕"
+
+            elif [[ "$TARGET_DATE_ISO" == *"2026-09-16"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-10-11"* ]]; then
+                echo "====== [6.18内核专属] 执行常规的 sed 热修复 ======"
+                if [ -f "$MAC_MK" ]; then sed -i 's/PKG_RELEASE:=3/PKG_RELEASE:=4/g' "$MAC_MK"; fi
+                if [ -f "$MAC_PATCH" ]; then
+                    sed -i 's/on Raspberry Pi/if SDIO enabled/g' "$MAC_PATCH"
+                    sed -i 's/on Raspberry Pi and LuCI/on BRCM43455-SDIO and LuCI/g' "$MAC_PATCH"
+                    sed -i 's/CONFIG_ARCH_BCM2835/CPTCFG_BRCMFMAC_SDIO/g' "$MAC_PATCH"
+                    echo "✅ 6.18 内核 sed 注入完毕"
+                fi
+            fi
 
         # 2. 开启 GXL MDIO MUX 修复以太网 PHY 问题
         for kconf in target/linux/amlogic/mesongx/config-*; do
