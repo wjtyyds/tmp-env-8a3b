@@ -203,6 +203,37 @@ if [[ "$FIRMWARE_TYPE" == lede* ]]; then
     # 修复 LEDE Aurora 主题页脚
     find package/custom/luci-theme-aurora -name "footer.ut" -exec sed -i 's/({{ version.distrevision }})/{% if (version.distrevision): %} ({{ version.distrevision }}){% endif %}/g' {} +
 
+    # ================= 专属底层修复补丁 (严格控制作用域) =================
+    if [ "$FIRMWARE_TYPE" == "lede-native" ] && { [[ "$TARGET_DATE_ISO" == *"2026-09-16"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-10-11"* ]]; }; then
+        echo "====== 仅针对 lede-native 特定日期 (${TARGET_DATE_ISO:0:10}) 注入底层修复补丁 ======"
+
+        # 1. 修复 mac80211 brcmfmac SDIO 导致 iwinfo 和 LuCI 卡顿的问题
+        MAC_MK="package/kernel/mac80211/Makefile"
+        MAC_PATCH="package/kernel/mac80211/patches/brcm/871-brcmfmac-disable-dump_survey-on-bcm2835.patch"
+        if [ -f "$MAC_MK" ]; then
+            sed -i 's/PKG_RELEASE:=3/PKG_RELEASE:=4/g' "$MAC_MK"
+        fi
+        if [ -f "$MAC_PATCH" ]; then
+            sed -i 's/on Raspberry Pi/if SDIO enabled/g' "$MAC_PATCH"
+            sed -i 's/on Raspberry Pi and LuCI/on BRCM43455-SDIO and LuCI/g' "$MAC_PATCH"
+            sed -i 's/CONFIG_ARCH_BCM2835/CPTCFG_BRCMFMAC_SDIO/g' "$MAC_PATCH"
+            echo "✅ 已注入 Mac80211 SDIO 性能修复补丁"
+        fi
+
+        # 2. 开启 GXL MDIO MUX 修复以太网 PHY 问题
+        for kconf in target/linux/amlogic/mesongx/config-*; do
+            if [ -f "$kconf" ]; then
+                if ! grep -q "CONFIG_MDIO_BUS_MUX_MESON_GXL=y" "$kconf"; then
+                    sed -i '/CONFIG_MDIO_BUS_MUX_MESON_G12A=y/a CONFIG_MDIO_BUS_MUX_MESON_GXL=y' "$kconf"
+                    grep -q "CONFIG_MDIO_BUS_MUX_MESON_GXL=y" "$kconf" || echo "CONFIG_MDIO_BUS_MUX_MESON_GXL=y" >> "$kconf"
+                    echo "✅ 已向 $kconf 注入 GXL MDIO 修复"
+                fi
+            fi
+        done
+    else
+        echo "🌟 当前配置无需注入 lede-native 专属底层修补补丁。"
+    fi
+
 elif [ "$FIRMWARE_TYPE" == "immortalwrt" ]; then
     if [ "$SOURCE_BRANCH" == "v25.12.1" ]; then
         rm -rf feeds/packages/lang/rust
