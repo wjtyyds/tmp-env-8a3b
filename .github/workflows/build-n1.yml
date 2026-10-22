@@ -136,7 +136,7 @@ jobs:
               echo "⏳ 触发 iStoreOS 时光机：正在查找 $BASE_BRANCH 分支在 $TARGET_DATE 之前的最后一次提交..."
               API_URL="https://api.github.com/repos/istoreos/istoreos/commits?sha=$BASE_BRANCH&until=$TARGET_DATE&per_page=1"
               API_RESP=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
-              TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null)
+              TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null || true)
           
               if [ "$TARGET_BRANCH" == "null" ] || [ -z "$TARGET_BRANCH" ]; then
                 echo "⚠️ 时光机未找到符合条件的提交，将拉取分支的最新代码！"
@@ -179,7 +179,7 @@ jobs:
           
               # 统一执行 API 抓取对应的 Commit Hash
               API_RESP=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
-              TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null)
+              TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null || true)
           
               if [ "$TARGET_BRANCH" == "null" ] || [ -z "$TARGET_BRANCH" ]; then
                 TARGET_BRANCH="${{ inputs.source_branch }}"
@@ -298,7 +298,7 @@ jobs:
                               api_url="https://api.github.com/repos/$repo_path/commits?until=$TARGET_DATE_ISO&per_page=1"
                           fi
           
-                          commit_hash=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$api_url" | jq -r '.[0].sha' 2>/dev/null)
+                          commit_hash=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$api_url" | jq -r '.[0].sha' 2>/dev/null || true)
           
                           if [ "$commit_hash" != "null" ] && [ -n "$commit_hash" ]; then
                               short_hash=${commit_hash:0:7}
@@ -522,7 +522,7 @@ jobs:
           
           echo "提取 OpenClash Meta (融入时光机)..."
           if [ -n "$TARGET_DATE_ISO" ]; then
-              CORE_HASH=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/vernesong/OpenClash/commits?sha=core&until=$TARGET_DATE_ISO&per_page=1" | jq -r '.[0].sha')
+              CORE_HASH=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/vernesong/OpenClash/commits?sha=core&until=$TARGET_DATE_ISO&per_page=1" | jq -r '.[0].sha' 2>/dev/null || true)
               if [ "$CORE_HASH" == "null" ] || [ -z "$CORE_HASH" ]; then CORE_HASH="core"; fi
           else
               CORE_HASH="core"
