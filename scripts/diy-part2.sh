@@ -318,6 +318,7 @@ cat << 'EOF' >> ${FILES_DIR}/etc/uci-defaults/zz_custom_setup
 # 3. 设置 AdGuardHome 标准路径
 uci set AdGuardHome.AdGuardHome.binpath='/usr/bin/AdGuardHome/AdGuardHome' 2>/dev/null
 uci set AdGuardHome.AdGuardHome.workdir='/usr/bin/AdGuardHome' 2>/dev/null
+uci set AdGuardHome.AdGuardHome.configpath='/etc/AdGuardHome.yaml' 2>/dev/null
 uci commit AdGuardHome 2>/dev/null
 EOF
 
