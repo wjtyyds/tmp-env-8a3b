@@ -125,47 +125,52 @@ jobs:
             REPO_URL="https://github.com/istoreos/istoreos.git"
             BASE_BRANCH="${{ inputs.source_branch }}"
           
-            if [[ "$CUSTOM_TAG" == "R26.09.16" ]] || [[ "$CUSTOM_TAG" == "R26.10.11" ]]; then
-              echo "⚡ 检测到 iStoreOS 特定版本 ($CUSTOM_TAG)，强制锁定至 10 月 12 日安全节点！"
-              TARGET_DATE="2026-10-12T15:59:59Z"
-              echo "TARGET_DATE_ISO=$TARGET_DATE" >> $GITHUB_ENV
-          
-              # 动态提取输入的原始标签日期，防止 Release 标题被覆盖为 v2026.10.12
-              if [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
-                echo "TARGET_DATE_SIMPLE=20${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}" >> $GITHUB_ENV
-              fi
-          
-              echo "⏳ 触发 iStoreOS 时光机：正在查找 $BASE_BRANCH 分支在 $TARGET_DATE 之前的最后一次提交..."
-              API_URL="https://api.github.com/repos/istoreos/istoreos/commits?sha=$BASE_BRANCH&until=$TARGET_DATE&per_page=1"
-              API_RESP=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
-              TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null || true)
-          
-              if [ "$TARGET_BRANCH" == "null" ] || [ -z "$TARGET_BRANCH" ]; then
-                echo "⚠️ 时光机未找到符合条件的提交，将拉取分支的最新代码！"
-                TARGET_BRANCH="$BASE_BRANCH"
-              fi
-            elif [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
+            if [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
               YEAR="20${BASH_REMATCH[1]}"
               MONTH="${BASH_REMATCH[2]}"
               DAY="${BASH_REMATCH[3]}"
-              TARGET_DATE="${YEAR}-${MONTH}-${DAY}T15:59:59Z"
-              echo "TARGET_DATE_ISO=$TARGET_DATE" >> $GITHUB_ENV
+              TAG_DATE="${YEAR}-${MONTH}-${DAY}T15:59:59Z"
+              COMPARE_DATE="20${BASH_REMATCH[1]}${MONTH}${DAY}"
+          
+              # 插件时间，永远跟着 Tag 走
+              echo "TARGET_DATE_ISO=$TAG_DATE" >> $GITHUB_ENV
               echo "TARGET_DATE_SIMPLE=20${BASH_REMATCH[1]}.${MONTH}.${DAY}" >> $GITHUB_ENV
           
-              echo "⏳ 触发 iStoreOS 时光机：正在查找 $BASE_BRANCH 分支在 $TARGET_DATE 之前的最后一次提交..."
-              API_URL="https://api.github.com/repos/istoreos/istoreos/commits?sha=$BASE_BRANCH&until=$TARGET_DATE&per_page=1"
+              if [ "$COMPARE_DATE" -le 20261020 ]; then
+                echo "⚡ 检测到 iStoreOS 且 Tag 早于或等于 10.20，主源码强制锁定 2026-10-20"
+                MAIN_SOURCE_DATE="2026-10-20T15:59:59Z"
+              else
+                echo "⚡ 检测到 iStoreOS 且 Tag 晚于 10.20，主源码跟随 Tag 日期: $TAG_DATE"
+                MAIN_SOURCE_DATE="$TAG_DATE"
+              fi
+          
+              API_URL="https://api.github.com/repos/istoreos/istoreos/commits?sha=$BASE_BRANCH&until=$MAIN_SOURCE_DATE&per_page=1"
               API_RESP=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
               TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null || true)
           
               if [ "$TARGET_BRANCH" == "null" ] || [ -z "$TARGET_BRANCH" ]; then
-                echo "⚠️ 时光机未找到符合条件的提交，将拉取分支的最新代码！"
                 TARGET_BRANCH="$BASE_BRANCH"
               fi
             else
               TARGET_BRANCH="$BASE_BRANCH"
             fi
           
-          elif [[ "${{ env.FIRMWARE_LOWER }}" == lede* ]]; then
+          elif [ "${{ env.FIRMWARE_LOWER }}" == "lede-native" ]; then
+            # lede-native 极简逻辑：永远拉取最新，只传递插件回滚变量
+            REPO_URL="https://github.com/coolsnowwolf/lede"
+            TARGET_BRANCH="${{ inputs.source_branch }}"
+            echo "⚡ 检测到 lede-native，主源码将保持最新状态！"
+          
+            if [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
+              YEAR="20${BASH_REMATCH[1]}"
+              MONTH="${BASH_REMATCH[2]}"
+              DAY="${BASH_REMATCH[3]}"
+              echo "TARGET_DATE_ISO=${YEAR}-${MONTH}-${DAY}T15:59:59Z" >> $GITHUB_ENV
+              echo "TARGET_DATE_SIMPLE=20${BASH_REMATCH[1]}.${MONTH}.${DAY}" >> $GITHUB_ENV
+            fi
+          
+          elif [ "${{ env.FIRMWARE_LOWER }}" == "lede" ]; then
+            # lede 普通版逻辑：老老实实回滚主源码
             REPO_URL="https://github.com/coolsnowwolf/lede"
           
             if [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
@@ -174,30 +179,12 @@ jobs:
               DAY="${BASH_REMATCH[3]}"
               TARGET_DATE="${YEAR}-${MONTH}-${DAY}T15:59:59Z"
           
-              # 无论主源码是否豁免，全局环境变量都正常下发，确保后续 Feeds 和插件乖乖回滚！
               echo "TARGET_DATE_ISO=$TARGET_DATE" >> $GITHUB_ENV
               echo "TARGET_DATE_SIMPLE=20${BASH_REMATCH[1]}.${MONTH}.${DAY}" >> $GITHUB_ENV
           
-              # 将日期转换为 8 位纯数字用于大小比对（如 20260916）
-              COMPARE_DATE="${YEAR}${MONTH}${DAY}"
-          
-              # 【LEDE 源码全局修正逻辑】
-              if [ "$COMPARE_DATE" == "20260909" ] || [ "$COMPARE_DATE" == "20260916" ] || [ "$COMPARE_DATE" == "20261011" ]; then
-                echo "⚡ 检测到极致回溯日期 ($COMPARE_DATE)，严格按当天的最后提交拉取代码！"
-                API_URL="https://api.github.com/repos/coolsnowwolf/lede/commits?sha=${{ inputs.source_branch }}&until=$TARGET_DATE&per_page=1"
-              elif [ "$COMPARE_DATE" -le 20261021 ]; then
-                echo "⚡ 检测到 LEDE 源码选择在 10月21日 或之前 ($COMPARE_DATE)！"
-                echo "👉 智能修正：主源码强制拉升至无 Bug 的 2026-10-21 最新，插件将保持回滚至 $COMPARE_DATE..."
-                SAFE_DATE="2026-10-21T23:59:59Z"
-                API_URL="https://api.github.com/repos/coolsnowwolf/lede/commits?sha=${{ inputs.source_branch }}&until=$SAFE_DATE&per_page=1"
-              else
-                # 晚于 10月21日，官方已彻底修复，正常回滚主源码
-                echo "⏳ 正常触发 LEDE 主源码时光机 ($COMPARE_DATE)..."
-                API_URL="https://api.github.com/repos/coolsnowwolf/lede/commits?sha=${{ inputs.source_branch }}&until=$TARGET_DATE&per_page=1"
-              fi
-          
-              # 统一执行 API 抓取对应的 Commit Hash
-              API_RESP=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
+              echo "⏳ 正常触发 Lede 主源码时光机 ($TARGET_DATE)..."
+              API_URL="https://api.github.com/repos/coolsnowwolf/lede/commits?sha=${{ inputs.source_branch }}&until=$TARGET_DATE&per_page=1"
+              API_RESP=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
               TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null || true)
           
               if [ "$TARGET_BRANCH" == "null" ] || [ -z "$TARGET_BRANCH" ]; then
@@ -207,19 +194,6 @@ jobs:
               TARGET_BRANCH="${{ inputs.source_branch }}"
             fi
           fi
-          
-          if [ -n "$CUSTOM_TAG" ] && [[ "${{ env.FIRMWARE_LOWER }}" != lede* ]] && [ "${{ env.FIRMWARE_LOWER }}" != "istoreos" ]; then
-              if [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
-                  YEAR="20${BASH_REMATCH[1]}"
-                  MONTH="${BASH_REMATCH[2]}"
-                  DAY="${BASH_REMATCH[3]}"
-                  echo "TARGET_DATE_ISO=${YEAR}-${MONTH}-${DAY}T23:59:59Z" >> $GITHUB_ENV
-                  echo "TARGET_DATE_ISO=${YEAR}-${MONTH}-${DAY}T15:59:59Z" >> $GITHUB_ENV
-                  echo "TARGET_DATE_SIMPLE=20${BASH_REMATCH[1]}.${MONTH}.${DAY}" >> $GITHUB_ENV
-              fi
-          fi
-          
-          echo "开始精准锁定指定的 Tag/Branch/Hash: $TARGET_BRANCH"
           mkdir openwrt && cd openwrt
           git init
           git remote add origin $REPO_URL
@@ -235,7 +209,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PRIVATE_TOKEN }}
         run: |
-          if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ]; then
+          if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ] || [ "${{ env.FIRMWARE_LOWER }}" == "lede-native" ]; then
+            # 彻底阻断 iStoreOS 和 lede-native 的 Feeds 溯源
+            DO_FEEDS_TM="false"
             if [[ "${{ inputs.source_branch }}" =~ ^(istoreos-[0-9]+\.[0-9]+) ]]; then
               BASE_FEED_VER="${BASH_REMATCH[1]}"
               TARGET_FEEDS="configs/feeds_${BASE_FEED_VER}.conf"
