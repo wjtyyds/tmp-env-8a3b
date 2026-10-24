@@ -157,7 +157,7 @@ rm -rf /tmp/OpenClash
 # ==========================================
 if [ "$BUILD_TYPE" == "public" ]; then
     echo "【公共版】：已配置拉取完整代理编译组件..."
-    
+
     # 增加日志
     echo "👉 [DEBUG-SH] 代理组件拉取拦截检查，TARGET_DATE_ISO: [$TARGET_DATE_ISO]"
 
@@ -202,8 +202,39 @@ fi
 if [[ "$FIRMWARE_TYPE" == lede* ]]; then
     # 修复 LEDE Aurora 主题页脚
     find package/custom/luci-theme-aurora -name "footer.ut" -exec sed -i 's/({{ version.distrevision }})/{% if (version.distrevision): %} ({{ version.distrevision }}){% endif %}/g' {} +
-    # (已删除原 lede-native 专属的 mac80211 WiFi 卡顿补丁和 GXL MDIO 修复)
-    # 理由：lede-native 现已强制拉取最新主源码，官方已彻底修复这些历史底层 Bug。
+
+    # ================= 专属底层修复补丁 (严格控制作用域) =================
+    # lede-native 专属历史底层 Bug 修复
+    if [ "$FIRMWARE_TYPE" == "lede-native" ] && [ -n "$TARGET_DATE_ISO" ]; then
+        MAC_MK="package/kernel/mac80211/Makefile"
+        MAC_PATCH="package/kernel/mac80211/patches/brcm/871-brcmfmac-disable-dump_survey-on-bcm2835.patch"
+
+        if [[ "$TARGET_DATE_ISO" == *"2026-09-16"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-10-11"* ]]; then
+            echo "====== [6.18内核专属] 执行常规的 sed 热修复 (SDIO & GXL PHY) ======"
+
+            # 1. SDIO 修复
+            if [ -f "$MAC_MK" ]; then sed -i 's/PKG_RELEASE:=3/PKG_RELEASE:=4/g' "$MAC_MK"; fi
+            if [ -f "$MAC_PATCH" ]; then
+                sed -i 's/on Raspberry Pi/if SDIO enabled/g' "$MAC_PATCH"
+                sed -i 's/on Raspberry Pi and LuCI/on BRCM43455-SDIO and LuCI/g' "$MAC_PATCH"
+                sed -i 's/CONFIG_ARCH_BCM2835/CPTCFG_BRCMFMAC_SDIO/g' "$MAC_PATCH"
+                echo "✅ 6.18 内核 SDIO sed 注入完毕"
+            fi
+
+            # 2. GXL MDIO 修复
+            for kconf in target/linux/amlogic/mesongx/config-*; do
+                if [ -f "$kconf" ]; then
+                    if ! grep -q "CONFIG_MDIO_BUS_MUX_MESON_GXL=y" "$kconf"; then
+                        sed -i '/CONFIG_MDIO_BUS_MUX_MESON_G12A=y/a CONFIG_MDIO_BUS_MUX_MESON_GXL=y' "$kconf"
+                        grep -q "CONFIG_MDIO_BUS_MUX_MESON_GXL=y" "$kconf" || echo "CONFIG_MDIO_BUS_MUX_MESON_GXL=y" >> "$kconf"
+                        echo "✅ 已向 $kconf 注入 GXL MDIO 修复"
+                    fi
+                fi
+            done
+        fi
+    else
+        echo "🌟 当前配置无需注入 lede-native 专属底层修补补丁。"
+    fi
 
 elif [ "$FIRMWARE_TYPE" == "immortalwrt" ]; then
     if [ "$SOURCE_BRANCH" == "v25.12.1" ]; then
