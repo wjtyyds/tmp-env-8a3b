@@ -126,7 +126,7 @@ jobs:
         run: |
           echo "====== 强制加载测试专属配置文件 ======"
           # 确保你已在仓库的 configs 目录下放了这份文件
-          cp configs/lede-1025.config openwrt/.config
+          cp configs/lede-1024.config openwrt/.config
           
           cd openwrt
           make defconfig
