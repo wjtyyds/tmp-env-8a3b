@@ -168,7 +168,7 @@ jobs:
             - **测试场景**: `${{ inputs.test_scenario }}`
             - **输入标签 (CUSTOM_TAG)**: `${{ env.CUSTOM_TAG }}`
             - **目标日期 (TARGET_DATE)**: `${{ env.TARGET_DATE_ISO }}`
-            - **配置来源**: `lede-1025.config`
+            - **配置来源**: `lede-1024.config`
             
             *此发布仅作测试对照，不会影响主线代码与正式 Release 体系。*
           files: release_files/*
