@@ -143,25 +143,15 @@ jobs:
               YEAR="20${BASH_REMATCH[1]}"
               MONTH="${BASH_REMATCH[2]}"
               DAY="${BASH_REMATCH[3]}"
-              TAG_DATE="${YEAR}-${MONTH}-${DAY}T15:59:59Z"
-              COMPARE_DATE="20${BASH_REMATCH[1]}${MONTH}${DAY}"
+              TARGET_DATE="${YEAR}-${MONTH}-${DAY}T15:59:59Z"
           
-              # 插件时间，永远跟着 Tag 走
-              echo "TARGET_DATE_ISO=$TAG_DATE" >> $GITHUB_ENV
+              echo "TARGET_DATE_ISO=$TARGET_DATE" >> $GITHUB_ENV
               echo "TARGET_DATE_SIMPLE=20${BASH_REMATCH[1]}.${MONTH}.${DAY}" >> $GITHUB_ENV
           
-              if [ "$COMPARE_DATE" -le 20261020 ]; then
-                echo "⚡ 检测到 iStoreOS 且 Tag 早于或等于 10.20，主源码强制锁定 2026-10-20"
-                MAIN_SOURCE_DATE="2026-10-20T15:59:59Z"
-              else
-                echo "⚡ 检测到 iStoreOS 且 Tag 晚于 10.20，主源码跟随 Tag 日期: $TAG_DATE"
-                MAIN_SOURCE_DATE="$TAG_DATE"
-              fi
-              echo "FEEDS_DATE_ISO=$MAIN_SOURCE_DATE" >> $GITHUB_ENV
-          
-              API_URL="https://api.github.com/repos/istoreos/istoreos/commits?sha=$BASE_BRANCH&until=$MAIN_SOURCE_DATE&per_page=1"
-              API_RESP=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
-              TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null || true)
+              echo "⏳ 触发 iStoreOS 时光机：正在查找 $BASE_BRANCH 分支在 $TARGET_DATE 之前的最后一次提交..."
+              API_URL="https://api.github.com/repos/istoreos/istoreos/commits?sha=$BASE_BRANCH&until=$TARGET_DATE&per_page=1"
+              API_RESP=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$API_URL")
+              TARGET_BRANCH=$(echo "$API_RESP" | jq -r '.[0].sha' 2>/dev/null)
           
               if [ "$TARGET_BRANCH" == "null" ] || [ -z "$TARGET_BRANCH" ]; then
                 TARGET_BRANCH="$BASE_BRANCH"
@@ -226,8 +216,6 @@ jobs:
           GH_TOKEN: ${{ secrets.PRIVATE_TOKEN }}
         run: |
           if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ] || [ "${{ env.FIRMWARE_LOWER }}" == "lede-native" ]; then
-            # 彻底阻断 iStoreOS 和 lede-native 的 Feeds 溯源
-            DO_FEEDS_TM="false"
             if [[ "${{ inputs.source_branch }}" =~ ^(istoreos-[0-9]+\.[0-9]+) ]]; then
               BASE_FEED_VER="${BASH_REMATCH[1]}"
               TARGET_FEEDS="configs/feeds_${BASE_FEED_VER}.conf"
@@ -252,26 +240,6 @@ jobs:
           
           # 【核心修复】：如果当前没有 feeds.conf (例如LEDE)，则从 default 复制，防破坏原文件
           [ ! -f feeds.conf ] && cp feeds.conf.default feeds.conf
-          
-          # ================= 👇 新增这块代码：动态展平 src-include 👇 =================
-          if grep -q "^src-include" feeds.conf; then
-              echo "🔧 [时光机兼容] 检测到 src-include，正在将其内容展平至 feeds.conf..."
-              mv feeds.conf feeds.conf.tmp
-              while IFS= read -r inc_line; do
-                  # 匹配 src-include 并提取第三个参数（即文件名，如 feeds.conf.default）
-                  if echo "$inc_line" | grep -q "^src-include"; then
-                      inc_file=$(echo "$inc_line" | awk '{print $3}')
-                      if [ -f "$inc_file" ]; then
-                          echo "  - 成功展开并注入: $inc_file"
-                          cat "$inc_file" >> feeds.conf
-                      fi
-                  else
-                      echo "$inc_line" >> feeds.conf
-                  fi
-              done < feeds.conf.tmp
-              rm -f feeds.conf.tmp
-          fi
-          # ================= 👆 新增结束 👆 =================
           
           if [[ "${{ env.FIRMWARE_LOWER }}" == "istoreos" || "${{ env.FIRMWARE_LOWER }}" == "lede" ]] && { [ -n "$FEEDS_DATE_ISO" ] || [ -n "$TARGET_DATE_ISO" ]; }; then
               echo "========================================================="
@@ -806,7 +774,7 @@ jobs:
             echo "⚠️ 警告：未在 target 目录下找到 usr/lib/os-release 实体文件！"
           fi
           echo "=================================================="
-               
+          
           REAL_ID="openwrt"
           REAL_VER=""
           
