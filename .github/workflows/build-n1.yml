@@ -583,7 +583,7 @@ jobs:
           fi
           
           echo "注入 AdGuardHome 引导脚本..."
-          cat << 'EOF' > $BASE_FILES/etc/init.d/ign0
+          cat << 'EOF' > $BASE_FILES/etc/init.d/ign
           #!/bin/sh /etc/rc.common
           START=99
           start() {
@@ -596,39 +596,30 @@ jobs:
           
                   if [ -f /usr/lib/adg_core/AdGuardHome ]; then
                       if [ "$IS_EMMC" = "1" ]; then
-                          # 🎯 写入 eMMC 后的“转正”逻辑（阅后即焚）
-          
-                          # 借助编译时注入的面板变量，判断是否为原生编译固件
                           if [ "%%FIRMWARE_TYPE%%" = "istoreos" ] || [ "%%FIRMWARE_TYPE%%" = "lede-native" ]; then
                               DATA_DIR="/opt/AdGuardHome"
                           else
-                              # 交叉编译（非原生）专属路径
                               DATA_DIR="/mnt/mmcblk2p4/AdGuardHome"
                           fi
-          
-                          # 预创建基础目录和 data 文件夹
+
                           mkdir -p "$DATA_DIR/data"
-          
-                          # 迁移核心程序并赋予权限
+
                           cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
                           chmod 755 "$DATA_DIR/AdGuardHome"
-          
-                          # 兜底：如果 U盘阶段有残留的配置和数据，整体合并到新家的 data 目录中
+
                           [ -d /usr/bin/AdGuardHome_data ] && cp -rn /usr/bin/AdGuardHome_data/* "$DATA_DIR/" 2>/dev/null
-          
-                          # 建立快捷方式，接管系统指向
+
                           rm -rf /usr/bin/AdGuardHome
                           ln -sf "$DATA_DIR" /usr/bin/AdGuardHome
-          
-                          # 🔥 终极阅后即焚：彻底清理旧母包和 U盘工作目录
+
                           rm -rf /usr/lib/adg_core
                           rm -rf /usr/bin/AdGuardHome_data
                       else
-                          # 💾 U盘引导阶段的通用“临时工”逻辑
+
                           DATA_DIR="/usr/bin/AdGuardHome_data"
                           mkdir -p "$DATA_DIR"
           
-                          # 仅复制核心，不触发销毁
+          
                           cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
                           chmod 755 "$DATA_DIR/AdGuardHome"
           
@@ -638,20 +629,19 @@ jobs:
                       /etc/init.d/AdGuardHome restart 2>/dev/null
                   fi
           
-                  # 写入 eMMC 后，引导脚本自身“阅后即焚”
                   if [ "$IS_EMMC" = "1" ]; then
-                      rm -f /etc/rc.d/S99ign0
-                      rm -f /etc/init.d/ign0
+                      rm -f /etc/rc.d/S99ign
+                      rm -f /etc/init.d/ign
                   fi
               ) &
           }
           EOF
-          chmod +x $BASE_FILES/etc/init.d/ign0
+          chmod +x $BASE_FILES/etc/init.d/ign
           
           # 将流水线面板选中的固件类型直接烙印到启动脚本里
-          sed -i "s/%%FIRMWARE_TYPE%%/${{ env.FIRMWARE_LOWER }}/g" $BASE_FILES/etc/init.d/ign0
+          sed -i "s/%%FIRMWARE_TYPE%%/${{ env.FIRMWARE_LOWER }}/g" $BASE_FILES/etc/init.d/ign
           
-          ln -sf ../init.d/ign0 $BASE_FILES/etc/rc.d/S99ign0
+          ln -sf ../init.d/ign $BASE_FILES/etc/rc.d/S99ign
           
           cat << 'EOF' > $BASE_FILES/etc/rc.local
           # Put your custom commands here that should be executed once

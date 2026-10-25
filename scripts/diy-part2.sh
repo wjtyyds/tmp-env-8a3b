@@ -645,3 +645,16 @@ EOF
         echo "⚠️ 未找到 xray-core Makefile 路径: $XRAY_MK_PATH"
     fi
 fi
+
+# ==========================================
+# 10. iStoreOS 历史版本 FullCone UI 修复
+# ==========================================
+if [ "$FIRMWARE_TYPE" == "istoreos" ] && [ -n "$CUSTOM_TAG" ]; then
+    echo "====== 触发 iStoreOS 历史 UI 修复：强制拉取最新防火墙前端 ======"
+    rm -rf feeds/luci/applications/luci-app-firewall
+    # 替换为正确的仓库地址：jjm2473/luci
+    git clone --depth 1 -b istoreos-25.12 https://github.com/jjm2473/luci.git /tmp/istoreos-luci
+    cp -r /tmp/istoreos-luci/applications/luci-app-firewall feeds/luci/applications/
+    rm -rf /tmp/istoreos-luci
+    echo "✅ 最新防火墙前端 (luci-app-firewall) 替换完成！"
+fi
