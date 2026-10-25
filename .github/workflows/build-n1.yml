@@ -284,31 +284,33 @@ jobs:
           # 【新增核心修复】展平 feeds.conf 中的 src-include 引用
           # 目的：让被 include 的 feeds.conf.default 里的 src-git 源也能被
           #      下面的时光机 while 循环处理（否则会被 grep "^src-git" 跳过）
-          # 场景：iStoreOS 的 feeds_istoreos-25.12.conf 第一行是
-          #      src-include defaults feeds.conf.default
           # ================================================================
           if grep -q '^src-include' feeds.conf 2>/dev/null; then
-              echo "🔧 检测到 src-include 指令，开始展平被引用的 feeds 文件..."
-              FLATTEN_TMP=$(mktemp)
-              while IFS= read -r line; do
-                  # 匹配 src-include <name> <path> 格式
-                  if [[ "$line" =~ ^src-include[[:space:]]+[^[:space:]]+[[:space:]]+(.+)$ ]]; then
-                      INCLUDE_FILE=$(echo "${BASH_REMATCH[1]}" | sed -E 's/[[:space:]]+$//')
-                      if [ -f "$INCLUDE_FILE" ]; then
-                          echo "   ↪ 展平 include 文件: $INCLUDE_FILE"
-                          echo "# ===== Flattened from $INCLUDE_FILE =====" >> "$FLATTEN_TMP"
-                          cat "$INCLUDE_FILE" >> "$FLATTEN_TMP"
-                          echo "# ===== End of $INCLUDE_FILE =====" >> "$FLATTEN_TMP"
+              if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ]; then
+                  echo "🔧 [iStoreOS 专属逻辑] 检测到 src-include 指令，按需【保留不展平】以豁免基础官方源的时光机回滚。"
+              else
+                  echo "🔧 检测到 src-include 指令，开始展平被引用的 feeds 文件..."
+                  FLATTEN_TMP=$(mktemp)
+                  while IFS= read -r line; do
+                      # 匹配 src-include <name> <path> 格式
+                      if [[ "$line" =~ ^src-include[[:space:]]+[^[:space:]]+[[:space:]]+(.+)$ ]]; then
+                          INCLUDE_FILE=$(echo "${BASH_REMATCH[1]}" | sed -E 's/[[:space:]]+$//')
+                          if [ -f "$INCLUDE_FILE" ]; then
+                              echo "   ↪ 展平 include 文件: $INCLUDE_FILE"
+                              echo "# ===== Flattened from $INCLUDE_FILE =====" >> "$FLATTEN_TMP"
+                              cat "$INCLUDE_FILE" >> "$FLATTEN_TMP"
+                              echo "# ===== End of $INCLUDE_FILE =====" >> "$FLATTEN_TMP"
+                          else
+                              echo "   ⚠️ 警告：include 文件 $INCLUDE_FILE 不存在，保留原行"
+                              echo "$line" >> "$FLATTEN_TMP"
+                          fi
                       else
-                          echo "   ⚠️ 警告：include 文件 $INCLUDE_FILE 不存在，保留原行"
                           echo "$line" >> "$FLATTEN_TMP"
                       fi
-                  else
-                      echo "$line" >> "$FLATTEN_TMP"
-                  fi
-              done < feeds.conf
-              mv "$FLATTEN_TMP" feeds.conf
-              echo "✅ feeds.conf 展平完成 (共 $(wc -l < feeds.conf) 行)"
+                  done < feeds.conf
+                  mv "$FLATTEN_TMP" feeds.conf
+                  echo "✅ feeds.conf 展平完成 (共 $(wc -l < feeds.conf) 行)"
+              fi
           fi
           
           if [[ "${{ env.FIRMWARE_LOWER }}" == "istoreos" || "${{ env.FIRMWARE_LOWER }}" == lede* ]] && { [ -n "$FEEDS_DATE_ISO" ] || [ -n "$TARGET_DATE_ISO" ]; }; then
