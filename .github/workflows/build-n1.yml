@@ -63,6 +63,7 @@ jobs:
 
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
+        timeout-minutes: 5
         with:
           tool-cache: true
           android: true
@@ -78,6 +79,7 @@ jobs:
           echo "BUILD_LOWER=$(echo '${{ inputs.build_type }}' | tr 'A-Z' 'a-z')" >> $GITHUB_ENV
 
       - name: Initialize the build environment
+        timeout-minutes: 3
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
