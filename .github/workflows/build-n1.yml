@@ -139,7 +139,7 @@ jobs:
             REPO_URL="https://github.com/istoreos/istoreos.git"
             BASE_BRANCH="${{ inputs.source_branch }}"
           
-            # 1. 确定探测的时间起点：有标签用标签，没标签用“当下最新时间”
+            # 1. 确定探测的时间起点
             if [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
               YEAR="20${BASH_REMATCH[1]}"
               MONTH="${BASH_REMATCH[2]}"
@@ -147,49 +147,66 @@ jobs:
               TARGET_DATE="${YEAR}-${MONTH}-${DAY}T15:59:59Z"
               echo "TARGET_DATE_SIMPLE=20${BASH_REMATCH[1]}.${MONTH}.${DAY}" >> $GITHUB_ENV
             else
-              # 没输入标签，起点设为当下时间 (UTC)
               TARGET_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
             fi
           
-            # 保留原始目标日期，专供 diy-part2.sh 里的第三方插件使用 (时间线 B)
+            # 将你指定的日期导出给 diy-part2.sh 里的外部插件使用
             echo "TARGET_DATE_ISO=$TARGET_DATE" >> $GITHUB_ENV
           
-            echo "⏳ 触发 iStoreOS 【智能】时光机：寻找 $TARGET_DATE 前包含 amlogic 设备的最后安全提交..."
+            echo "⏳ 触发 iStoreOS 【本地极速】时光机：寻找 $TARGET_DATE 前包含 amlogic 设备的最后安全提交..."
           
-            # 获取前 30 次提交记录进行探测
-            API_URL="https://api.github.com/repos/istoreos/istoreos/commits?sha=$BASE_BRANCH&until=$TARGET_DATE&per_page=30"
-            COMMITS=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$API_URL" | jq -r '.[].sha' 2>/dev/null)
+            # 先行拉取源码到本地，供极速搜索使用
+            mkdir openwrt && cd openwrt
+            git init
+            git remote add origin $REPO_URL
+            git fetch origin "$BASE_BRANCH"
+          
+            # 精准过滤出核心作者在目标日期前的提交，大幅提高命中率与稳定性
+            COMMITS=$(git log FETCH_HEAD --until="$TARGET_DATE" -i --author="jjm2473\|linkease\|istoreos" --format="%H")
           
             TARGET_BRANCH=""
             for hash in $COMMITS; do
-              if [ -z "$hash" ] || [ "$hash" == "null" ]; then continue; fi
+              if [ -z "$hash" ]; then continue; fi
           
-              # 穿透透视：利用 API 直接检查该哈希代码树下是否存在 amlogic 目录
-              CHECK_URL="https://api.github.com/repos/istoreos/istoreos/contents/target/linux/amlogic?ref=$hash"
-              HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $GH_TOKEN" "$CHECK_URL")
-          
-              if [ "$HTTP_CODE" == "200" ]; then
-                echo "🎉 智能探测成功！锁定包含 N1 设备的哈希: $hash"
+              # 本地极速穿透透视目录树，不走网络请求，1毫秒判断
+              if git ls-tree -d "$hash" target/linux/amlogic 2>/dev/null | grep -q "target/linux/amlogic"; then
+                echo "🎉 核心作者探测成功！锁定包含 N1 设备的哈希: $hash"
                 TARGET_BRANCH="$hash"
           
-                # 【核心】提取这个安全哈希的真实提交时间，作为 Feeds 的基准时间 (时间线 A)
-                COMMIT_INFO=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/istoreos/istoreos/commits/$hash")
-                SAFE_DATE_ISO=$(echo "$COMMIT_INFO" | jq -r '.commit.committer.date')
+                # 提取底层安全基准时间，专供后续 Feeds 联动回退使用
+                SAFE_DATE_ISO=$(git show -s --format=%cI "$hash")
                 echo "🕒 提取到底层安全基准时间: $SAFE_DATE_ISO"
                 echo "SAFE_DATE_ISO=$SAFE_DATE_ISO" >> $GITHUB_ENV
                 break
-              else
-                echo "⚠️ 警告：哈希 $hash 中缺失 amlogic 设备代码，自动向前回溯..."
               fi
             done
           
+            # 兜底：如果核心作者的提交里没找到，开启无差别历史扫描
             if [ -z "$TARGET_BRANCH" ]; then
-              echo "❌ 错误：向前回溯 30 次提交均未找到 amlogic！将降级使用基础分支最新代码。"
-              TARGET_BRANCH="$BASE_BRANCH"
+              echo "⚠️ 核心作者历史中未找到，开启无差别历史扫描..."
+              ALL_COMMITS=$(git log FETCH_HEAD --until="$TARGET_DATE" --format="%H")
+              for hash in $ALL_COMMITS; do
+                if git ls-tree -d "$hash" target/linux/amlogic 2>/dev/null | grep -q "target/linux/amlogic"; then
+                  echo "🎉 无差别扫描成功！锁定哈希: $hash"
+                  TARGET_BRANCH="$hash"
+                  SAFE_DATE_ISO=$(git show -s --format=%cI "$hash")
+                  echo "SAFE_DATE_ISO=$SAFE_DATE_ISO" >> $GITHUB_ENV
+                  break
+                fi
+              done
             fi
           
+            if [ -z "$TARGET_BRANCH" ]; then
+              echo "❌ 错误：本地历史回溯均未找到 amlogic！将降级使用基础分支最新代码。"
+              TARGET_BRANCH="FETCH_HEAD"
+            fi
+          
+            # iStoreOS 分支提前检出代码，并打上跳过标记
+            git checkout "$TARGET_BRANCH"
+            SKIP_CLONE=true
+            cd ..
+          
           elif [[ "${{ env.FIRMWARE_LOWER }}" == lede* ]]; then
-            # lede 和 lede-native 共同版逻辑：老老实实回滚主源码
             REPO_URL="https://github.com/coolsnowwolf/lede"
           
             if [[ "$CUSTOM_TAG" =~ ^R([0-9]{2})\.([0-9]{2})\.([0-9]{2})$ ]]; then
@@ -214,11 +231,17 @@ jobs:
               TARGET_BRANCH="${{ inputs.source_branch }}"
             fi
           fi
-          mkdir openwrt && cd openwrt
-          git init
-          git remote add origin $REPO_URL
-          git fetch --depth 1 origin "$TARGET_BRANCH"
-          git checkout FETCH_HEAD
+          
+          # 根据标记决定是否需要重新克隆检出
+          if [ "$SKIP_CLONE" != "true" ]; then
+            mkdir openwrt && cd openwrt
+            git init
+            git remote add origin $REPO_URL
+            git fetch --depth 1 origin "$TARGET_BRANCH"
+            git checkout FETCH_HEAD
+          else
+            cd openwrt
+          fi
           
           CURRENT_HASH=$(git log -1 --format="%h")
           echo "✅ 源码已成功锁定至哈希: $CURRENT_HASH"
