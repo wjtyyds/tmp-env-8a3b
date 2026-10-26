@@ -157,8 +157,8 @@ jobs:
           
             echo "⏳ 触发 iStoreOS 【本地极速】时光机：寻找 $TARGET_DATE 前包含 amlogic 设备的最后安全提交..."
           
-            # 先行拉取源码到本地，供极速搜索使用
-            mkdir openwrt && cd openwrt
+            # 【核心修改】：建立临时透视目录，不污染最终的编译环境
+            mkdir tmp_probe && cd tmp_probe
             git init
             git remote add origin $REPO_URL
             git fetch origin "$BASE_BRANCH"
@@ -203,10 +203,10 @@ jobs:
               TARGET_BRANCH="FETCH_HEAD"
             fi
           
-            # iStoreOS 分支提前检出代码，并打上跳过标记
-            git checkout "$TARGET_BRANCH"
-            SKIP_CLONE=true
+            # 【核心修改】：透视完成，退出并焚毁临时目录。
+            # 让底部的统一步骤执行 depth 1 浅克隆，以此恢复 r0 版本号。
             cd ..
+            rm -rf tmp_probe
           
           elif [[ "${{ env.FIRMWARE_LOWER }}" == lede* ]]; then
             REPO_URL="https://github.com/coolsnowwolf/lede"
@@ -281,9 +281,9 @@ jobs:
           [ ! -f feeds.conf ] && cp feeds.conf.default feeds.conf
           
           # ================================================================
-          # 【新增核心修复】展平 feeds.conf 中的 src-include 引用
-          # 目的：让被 include 的 feeds.conf.default 里的 src-git 源也能被
-          #      下面的时光机 while 循环处理（否则会被 grep "^src-git" 跳过）
+          # 【动态解析】处理 feeds.conf 中的 src-include 引用
+          # 目的 1：对于常规固件，展平被引用的文件，让里面的源进入时光机回滚；
+          # 目的 2：对于 iStoreOS (特例)，保留原样不展平，从而豁免官方基础源的回滚。
           # ================================================================
           if grep -q '^src-include' feeds.conf 2>/dev/null; then
               if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ]; then
