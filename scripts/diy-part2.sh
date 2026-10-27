@@ -115,13 +115,6 @@ echo "====== 统一清理老旧底层代理核心 ======"
 rm -rf feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,v2ray-plugin,xray-plugin,geoview,shadow-tls} 2>/dev/null
 rm -rf feeds/luci/applications/luci-app-passwall 2>/dev/null
 
-if [ "$BUILD_TYPE" == "personal" ]; then
-    echo "【Personal 版本】：物理抹除 Docker 环境与测试仓库..."
-    rm -rf feeds/packages/utils/{docker,dockerd,containerd,runc,docker-compose} 2>/dev/null
-    rm -rf feeds/luci/applications/luci-app-dockerman 2>/dev/null
-    rm -rf feeds/helloworld 2>/dev/null
-fi
-
 # ==========================================
 # 3. 统一拉取：共用的第三方基础插件库 (全局生效，带时光机)
 # ==========================================
@@ -623,6 +616,9 @@ EOF
 
     # ================= 第三部分：脚本统一自毁指令 =================
     cat << 'EOF' >> ${FILES_DIR}/etc/uci-defaults/97_personal_setup
+
+# 首次开机时安全覆盖配置文件
+[ -f /etc/AdGuardHome_private.yaml ] && mv -f /etc/AdGuardHome_private.yaml /etc/AdGuardHome.yaml
 
 rm -f /etc/uci-defaults/97_personal_setup
 EOF

@@ -610,7 +610,7 @@ jobs:
                   gh release download "Private-Configs" -R "$PRIVATE_REPO" -p "private_config.zip" --clobber >/dev/null 2>&1 || true
                   if [ -f "private_config.zip" ]; then
                       unzip -q "private_config.zip" -d /tmp/private_conf/ || true
-                      [ -f "/tmp/private_conf/AdGuardHome.yaml" ] && mv /tmp/private_conf/AdGuardHome.yaml $BASE_FILES/etc/
+                      [ -f "/tmp/private_conf/AdGuardHome.yaml" ] && mv /tmp/private_conf/AdGuardHome.yaml $BASE_FILES/etc/AdGuardHome_private.yaml
                       LUCKY_ZIP=$(ls /tmp/private_conf/lucky_*.zip 2>/dev/null | head -n 1)
                       if [ -n "$LUCKY_ZIP" ]; then
                           mkdir -p $BASE_FILES/etc/config/lucky.daji
