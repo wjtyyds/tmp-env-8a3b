@@ -472,6 +472,26 @@ jobs:
           if [ "${{ env.BUILD_LOWER }}" == "public" ]; then
             echo "====== 注入 Public 科学套件 ======"
           
+            # 优雅地批量注入 Nikki 的底层依赖（利用 cat >> 一次性写入 .config）
+            echo "👉 [DEBUG] 注入公共基础网络与内核依赖..."
+            cat >> openwrt/.config <<EOF
+          # 基础工具类
+          CONFIG_PACKAGE_ca-bundle=y
+          CONFIG_PACKAGE_curl=y
+          CONFIG_PACKAGE_yq=y
+
+          # 网络和防火墙类
+          CONFIG_PACKAGE_firewall4=y
+          CONFIG_PACKAGE_ip-full=y
+
+          # 内核模块类 (kmod)
+          CONFIG_PACKAGE_kmod-inet-diag=y
+          CONFIG_PACKAGE_kmod-nft-socket=y
+          CONFIG_PACKAGE_kmod-nft-tproxy=y
+          CONFIG_PACKAGE_kmod-tun=y
+          CONFIG_PACKAGE_kmod-dummy=y
+          EOF
+
             # --- 新增日志输出开始 ---
             echo "👉 [DEBUG] 当前注入拦截变量判断："
             echo "  - TARGET_DATE_ISO (包含检查): [${{ env.TARGET_DATE_ISO }}]"
