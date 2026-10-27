@@ -164,7 +164,7 @@ jobs:
             git fetch origin "$BASE_BRANCH"
           
             # 精准过滤出核心作者在目标日期前的提交，大幅提高命中率与稳定性
-            COMMITS=$(git log FETCH_HEAD --until="$TARGET_DATE" -i --author="jjm2473\|linkease\|istoreos" --format="%H")
+            COMMITS=$(git log FETCH_HEAD --until="$TARGET_DATE" -i --author="jjm2473\|linkease\|istoreos" --committer="jjm2473\|linkease\|istoreos" --format="%H")
           
             TARGET_BRANCH=""
             for hash in $COMMITS; do
@@ -254,15 +254,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PRIVATE_TOKEN }}
         run: |
+          # [新增] 动态定义配置目录 (configs/public 或 configs/personal)
+          CONF_DIR="configs/${{ env.BUILD_LOWER }}"
+          
           if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ] || [ "${{ env.FIRMWARE_LOWER }}" == "lede-native" ]; then
             if [[ "${{ inputs.source_branch }}" =~ ^(istoreos-[0-9]+\.[0-9]+) ]]; then
               BASE_FEED_VER="${BASH_REMATCH[1]}"
-              TARGET_FEEDS="configs/feeds_${BASE_FEED_VER}.conf"
+              TARGET_FEEDS="${CONF_DIR}/feeds_${BASE_FEED_VER}.conf"
             else
-              TARGET_FEEDS="configs/feeds_${{ inputs.source_branch }}.conf"
+              TARGET_FEEDS="${CONF_DIR}/feeds_${{ inputs.source_branch }}.conf"
             fi
           
-            DEFAULT_FEEDS="configs/feeds_istoreos.conf"
+            DEFAULT_FEEDS="${CONF_DIR}/feeds_istoreos.conf"
           
             if [ -f "$TARGET_FEEDS" ]; then
               echo "====== 匹配到分支专属 feeds 配置，开始注入: $TARGET_FEEDS ======"
@@ -404,13 +407,14 @@ jobs:
       - name: Load Configuration
         run: |
           CONF_NAME="${{ env.FIRMWARE_LOWER }}"
+          CONF_DIR="configs/${{ env.BUILD_LOWER }}"
           
-          if [ ! -f "configs/${CONF_NAME}.config" ] && [[ "${CONF_NAME}" == "lede-native" ]]; then
-            echo "未找到 lede-native.config，降级使用共用的 lede.config..."
-            cp configs/lede.config openwrt/.config
+          if [ ! -f "${CONF_DIR}/${CONF_NAME}.config" ] && [[ "${CONF_NAME}" == "lede-native" ]]; then
+            echo "未找到 ${CONF_DIR}/lede-native.config，降级使用共用的 lede.config..."
+            cp ${CONF_DIR}/lede.config openwrt/.config
           else
-            echo "加载配置文件: configs/${CONF_NAME}.config"
-            cp configs/${CONF_NAME}.config openwrt/.config
+            echo "加载配置文件: ${CONF_DIR}/${CONF_NAME}.config"
+            cp ${CONF_DIR}/${CONF_NAME}.config openwrt/.config
           fi
           
           sed -i 's/CONFIG_KERNEL_DEBUG_INFO=y/# CONFIG_KERNEL_DEBUG_INFO is not set/g' openwrt/.config
@@ -433,6 +437,8 @@ jobs:
           CONFIG_PACKAGE_luci-app-lucky=y
           CONFIG_PACKAGE_luci-app-openclash=y
           CONFIG_PACKAGE_luci-app-oaf=y
+          CONFIG_PACKAGE_luci-app-diskman=y
+          CONFIG_PACKAGE_luci-app-diskman_INCLUDE_lsblk=y
           EOF
 
           if [[ "${CONF_NAME}" == lede* ]]; then
@@ -460,8 +466,6 @@ jobs:
 
           elif [ "${CONF_NAME}" == "openwrt" ]; then
             cat >> openwrt/.config <<EOF
-          CONFIG_PACKAGE_luci-app-diskman=y
-          CONFIG_PACKAGE_luci-app-diskman_INCLUDE_lsblk=y
           CONFIG_PACKAGE_luci-app-turboacc=y
           CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING=y
           CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y
@@ -527,19 +531,6 @@ jobs:
             else
               echo "⛔ [DEBUG] 已命中拦截日期，成功拦截 Daede 注入！"
             fi
-
-          elif [ "${{ env.BUILD_LOWER }}" == "personal" ]; then
-            echo "====== 开始注入 Personal 版本专属强效断根指令 ======"
-            sed -i 's/CONFIG_PACKAGE_luci-app-dockerman=y/# CONFIG_PACKAGE_luci-app-dockerman is not set/g' openwrt/.config
-            sed -i 's/CONFIG_PACKAGE_luci-lib-docker=y/# CONFIG_PACKAGE_luci-lib-docker is not set/g' openwrt/.config
-            sed -i 's/CONFIG_PACKAGE_docker=y/# CONFIG_PACKAGE_docker is not set/g' openwrt/.config
-            sed -i 's/CONFIG_PACKAGE_docker-compose=y/# CONFIG_PACKAGE_docker-compose is not set/g' openwrt/.config
-            sed -i 's/CONFIG_PACKAGE_dockerd=y/# CONFIG_PACKAGE_dockerd is not set/g' openwrt/.config
-            sed -i 's/CONFIG_PACKAGE_containerd=y/# CONFIG_PACKAGE_containerd is not set/g' openwrt/.config
-            sed -i 's/CONFIG_PACKAGE_runc=y/# CONFIG_PACKAGE_runc is not set/g' openwrt/.config
-            sed -i 's/CONFIG_DOCKER_NET_MACVLAN=y/# CONFIG_DOCKER_NET_MACVLAN is not set/g' openwrt/.config
-            sed -i 's/CONFIG_DOCKER_STO_EXT4=y/# CONFIG_DOCKER_STO_EXT4 is not set/g' openwrt/.config
-          fi
           
           cd openwrt
           make defconfig

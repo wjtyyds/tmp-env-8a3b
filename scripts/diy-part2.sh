@@ -184,19 +184,23 @@ fi
 # ==========================================
 echo "====== 开始各分支的差异化特征修改 ======"
 
-echo "👉 [DEBUG-SH] 差异化补丁检查，TARGET_DATE_ISO: [$TARGET_DATE_ISO]"
-if [[ "$TARGET_DATE_ISO" == *"2026-09-09"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-09-16"* ]]; then
-    echo "【${TARGET_DATE_ISO:0:10} 专属补丁】: 命中，开始执行 Dockerman 替换..."
+if [ "$BUILD_TYPE" == "public" ]; then
+    echo "👉 [DEBUG-SH] 差异化补丁检查，TARGET_DATE_ISO: [$TARGET_DATE_ISO]"
+    if [[ "$TARGET_DATE_ISO" == *"2026-09-09"* ]] || [[ "$TARGET_DATE_ISO" == *"2026-09-16"* ]]; then
+        echo "【${TARGET_DATE_ISO:0:10} 专属补丁】: 命中，开始执行 Dockerman 替换..."
 
-    # 彻底移除系统自带的应用包和依赖库
-    rm -rf feeds/luci/applications/luci-app-dockerman 2>/dev/null
-    rm -rf feeds/luci/libs/luci-lib-docker 2>/dev/null
+        # 彻底移除系统自带的应用包和依赖库
+        rm -rf feeds/luci/applications/luci-app-dockerman 2>/dev/null
+        rm -rf feeds/luci/libs/luci-lib-docker 2>/dev/null
 
-    # 拉取自定义的应用包和依赖库 (均强制使用 Hash 拉取模式以避开无效 Tag)
-    clone_time_machine "https://github.com/wjtyyds/luci-app-dockerman" "luci-app-dockerman" "$TARGET_DATE_ISO" "true"
-    clone_time_machine "https://github.com/wjtyyds/luci-lib-docker" "luci-lib-docker" "$TARGET_DATE_ISO" "true"
+        # 拉取自定义的应用包和依赖库 (均强制使用 Hash 拉取模式以避开无效 Tag)
+        clone_time_machine "https://github.com/wjtyyds/luci-app-dockerman" "luci-app-dockerman" "$TARGET_DATE_ISO" "true"
+        clone_time_machine "https://github.com/wjtyyds/luci-lib-docker" "luci-lib-docker" "$TARGET_DATE_ISO" "true"
+    else
+        echo "✅ [DEBUG-SH] 未命中 09.09 或 09.16，跳过 Dockerman 替换。"
+    fi
 else
-    echo "✅ [DEBUG-SH] 未命中 09.09 或 09.16，跳过 Dockerman 替换。"
+    echo "【Personal 模式】：跳过特定日期的 Dockerman 源码替换逻辑，保持纯净。"
 fi
 
 if [[ "$FIRMWARE_TYPE" == lede* ]]; then
@@ -262,12 +266,17 @@ elif [ "$FIRMWARE_TYPE" == "openwrt" ] || [ "$FIRMWARE_TYPE" == "istoreos" ]; th
         fi
     fi
 
-    # 分支独有逻辑
-    if [ "$FIRMWARE_TYPE" == "openwrt" ]; then
-        git clone --depth 1 https://github.com/lisaac/luci-app-diskman package/custom/luci-app-diskman
-        curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh | bash -s -- --no-sfe
-    elif [ "$FIRMWARE_TYPE" == "istoreos" ]; then
-        find package/ feeds/ -path "*/luci-static/quickstart/*.js" -exec sed -i 's|admin/services/appfilter|admin/services/oaf|g' {} + 2>/dev/null || true
+        # 单独处理 Diskman 的源码拉取
+        if [ "$FIRMWARE_TYPE" == "openwrt" ] || { [ "$FIRMWARE_TYPE" == "istoreos" ] && [ "$BUILD_TYPE" == "personal" ]; }; then
+            echo "====== 为 $FIRMWARE_TYPE ($BUILD_TYPE) 专属拉取 Diskman 源码 ======"
+            git clone --depth 1 https://github.com/lisaac/luci-app-diskman package/custom/luci-app-diskman
+        fi
+
+        # 分支独有逻辑
+        if [ "$FIRMWARE_TYPE" == "openwrt" ]; then
+            curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh | bash -s -- --no-sfe
+        elif [ "$FIRMWARE_TYPE" == "istoreos" ]; then
+            find package/ feeds/ -path "*/luci-static/quickstart/*.js" -exec sed -i 's|admin/services/appfilter|admin/services/oaf|g' {} + 2>/dev/null || true
         BANNER_FILE=$(find package/ base-files/ -type f -name "banner" 2>/dev/null | head -n 1)
         if [ -n "$BANNER_FILE" ]; then
             sed -i 's/                                  Powered by OpenWRT/ Compiled by 粉墨悲欢@恩山        Powered by OpenWRT/g' "$BANNER_FILE"
@@ -445,8 +454,8 @@ EOF
 
 fi
 
-# ====== iStoreOS 修改默认原先配置设定 ======
-if [ "$FIRMWARE_TYPE" == "istoreos" ]; then
+# ====== iStoreOS 修改默认原先配置设定 (Public 专属) ======
+if [ "$FIRMWARE_TYPE" == "istoreos" ] && [ "$BUILD_TYPE" == "public" ]; then
     # 💡 命名为 zzz_istoreos_setup，保证全系统绝对最后一个执行
     cat << 'EOF' > ${FILES_DIR}/etc/uci-defaults/zzz_istoreos_setup
 #!/bin/sh
@@ -520,10 +529,12 @@ wifi reload 2>/dev/null
 rm -f /etc/uci-defaults/zzz_istoreos_setup
 EOF
 
-# ====== 原本的 Personal 版设定 (针对非 iStoreOS) ======
+# ====== Personal 版设定 (通用网络设定 + iStoreOS 专属叠加) ======
 elif [ "$BUILD_TYPE" == "personal" ]; then
     cat << EOF > ${FILES_DIR}/etc/uci-defaults/97_personal_setup
 #!/bin/sh
+
+# ================= 第一部分：Personal 全局网络及拨号配置 =================
 uci delete network.lan.type 2>/dev/null
 uci set network.lan.device='eth0'
 uci set network.lan.ifname='eth0'
@@ -552,8 +563,70 @@ fi
 
 uci set AdGuardHome.AdGuardHome.configpath='/etc/AdGuardHome.yaml'
 uci commit AdGuardHome
+EOF
+
+    # ================= 第二部分：如果当前是 iStoreOS，追加专属特性 =================
+    if [ "$FIRMWARE_TYPE" == "istoreos" ]; then
+        cat << 'EOF' >> ${FILES_DIR}/etc/uci-defaults/97_personal_setup
+
+# --- iStoreOS Personal 专属叠加配置开始 ---
+
+# 1. 强制开启 LAN 口的 DHCP 服务器 (基于 192.168.2.254 下发)
+uci set dhcp.lan.ignore='0' 2>/dev/null
+uci set dhcp.lan.start='100' 2>/dev/null
+uci set dhcp.lan.limit='150' 2>/dev/null
+uci set dhcp.lan.leasetime='12h' 2>/dev/null
+uci set dhcp.lan.dhcpv4='server' 2>/dev/null
+uci commit dhcp
+
+# 2. 替换 root 密码为 password 的哈希值，跳过 iStoreOS 强制密码向导
+sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
+
+# 3. 首次开机自动唤醒 WiFi 并修改参数（后台轮询）
+(
+    # 循环等待，直到系统内核成功挂载 wlan 物理接口
+    for i in $(seq 1 15); do
+        if ls /sys/class/net/ | grep -q "^wlan"; then
+            break
+        fi
+        sleep 2
+    done
+
+    # 触发系统原生生成默认配置（不加 rm -f，绝不破坏原有默认参数）
+    wifi config 2>/dev/null
+
+    # 按照需求精确配置 5G 频段与属性
+    uci set wireless.@wifi-device[0].country='US'
+    uci set wireless.@wifi-device[0].htmode='VHT80'
+    uci set wireless.@wifi-device[0].channel='36'
+    uci set wireless.@wifi-device[0].band='5g'
+    uci delete wireless.@wifi-device[0].disabled 2>/dev/null
+
+    # 配置接口参数
+    uci set wireless.@wifi-iface[0].ssid='Phicomm_n1'
+    uci set wireless.@wifi-iface[0].encryption='psk-mixed'
+    uci set wireless.@wifi-iface[0].key='password'
+    uci delete wireless.@wifi-iface[0].disabled 2>/dev/null
+
+    uci commit wireless
+
+    # 强制拉起底层物理网卡
+    wifi up 2>/dev/null
+) &
+
+# 4. 重启网络与无线服务，使 IP、DHCP 和 WiFi 配置立即生效
+/etc/init.d/network restart
+wifi reload 2>/dev/null
+# --- iStoreOS Personal 专属叠加配置结束 ---
+EOF
+    fi
+
+    # ================= 第三部分：脚本统一自毁指令 =================
+    cat << 'EOF' >> ${FILES_DIR}/etc/uci-defaults/97_personal_setup
+
 rm -f /etc/uci-defaults/97_personal_setup
 EOF
+
 fi
 
 # ==========================================
