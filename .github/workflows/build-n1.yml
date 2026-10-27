@@ -29,7 +29,7 @@ on:
       kernel_version:
         description: '打包内核版本 (注：若是原生编译则无需理会此项)'
         required: true
-        default: '6.18.57'
+        default: '6.18.59'
       kernel_builder:
         description: '选择内核分支 (注：若是原生编译则无需理会此项)'
         required: true
@@ -531,7 +531,7 @@ jobs:
             else
               echo "⛔ [DEBUG] 已命中拦截日期，成功拦截 Daede 注入！"
             fi
-          
+          fi
           cd openwrt
           make defconfig
 
