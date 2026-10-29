@@ -270,6 +270,13 @@ elif [ "$FIRMWARE_TYPE" == "openwrt" ] || [ "$FIRMWARE_TYPE" == "istoreos" ]; th
             curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh | bash -s -- --no-sfe
         elif [ "$FIRMWARE_TYPE" == "istoreos" ]; then
             find package/ feeds/ -path "*/luci-static/quickstart/*.js" -exec sed -i 's|admin/services/appfilter|admin/services/oaf|g' {} + 2>/dev/null || true
+        # ================= 溯源打击 =================
+        # 铲除 iStoreOS 针对 Amlogic 平台单网口强制分配 DHCP 的毒瘤
+        ISTORE_NET_BOARD="target/linux/amlogic/base-files/etc/board.d/02_network"
+        if [ -f "$ISTORE_NET_BOARD" ]; then
+            sed -i "s/ucidef_set_interface_lan 'eth0' 'dhcp'/ucidef_set_interface_lan 'eth0' 'static'/g" "$ISTORE_NET_BOARD"
+            echo "✅ 已将 iStoreOS 底层 Amlogic 单网口强制 DHCP 修复为 Static 静态！"
+        fi
         BANNER_FILE=$(find package/ base-files/ -type f -name "banner" 2>/dev/null | head -n 1)
         if [ -n "$BANNER_FILE" ]; then
             sed -i 's/                                  Powered by OpenWRT/ Compiled by 粉墨悲欢@恩山        Powered by OpenWRT/g' "$BANNER_FILE"
@@ -453,27 +460,10 @@ if [ "$FIRMWARE_TYPE" == "istoreos" ] && [ "$BUILD_TYPE" == "public" ]; then
     cat << 'EOF' > ${FILES_DIR}/etc/uci-defaults/zzz_istoreos_setup
 #!/bin/sh
 
-# 1. 强制设为静态 IP 192.168.1.1，保留 br-lan，并彻底铲除 lan6 接口
-uci set network.lan.proto='static'
-uci set network.lan.ipaddr='192.168.1.1'
-uci set network.lan.netmask='255.255.255.0'
-uci delete network.lan.gateway 2>/dev/null
-uci delete network.lan.dns 2>/dev/null
-uci delete network.lan6 2>/dev/null
-uci commit network
-
-# 2. 强制开启 LAN 口的 DHCP 服务器
-uci set dhcp.lan.ignore='0' 2>/dev/null
-uci set dhcp.lan.start='100' 2>/dev/null
-uci set dhcp.lan.limit='150' 2>/dev/null
-uci set dhcp.lan.leasetime='12h' 2>/dev/null
-uci set dhcp.lan.dhcpv4='server' 2>/dev/null
-uci commit dhcp
-
-# 3. 替换 root 密码为 password 的哈希值，跳过 iStoreOS 强制密码向导
+# 1. 替换 root 密码为 password 的哈希值，跳过 iStoreOS 强制密码向导
 sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
 
-# 4. 强制设置 iStoreOS 默认主题为 Aurora，配置侧边栏并关闭快捷工具栏
+# 2. 强制设置 iStoreOS 默认主题为 Aurora，配置侧边栏并关闭快捷工具栏
 uci set luci.main.mediaurlbase='/luci-static/aurora' 2>/dev/null
 uci commit luci 2>/dev/null
 if [ -f /etc/config/aurora ]; then
@@ -482,7 +472,7 @@ if [ -f /etc/config/aurora ]; then
     uci commit aurora 2>/dev/null
 fi
 
-# 5. 首次开机自动唤醒 WiFi 并修改参数（后台轮询）
+# 3. 首次开机自动唤醒 WiFi 并修改参数（后台轮询）
 (
     # 循环等待，直到系统内核成功挂载 wlan 物理接口
     for i in $(seq 1 15); do
@@ -514,11 +504,10 @@ fi
     wifi up 2>/dev/null
 ) &
 
-# 6. 重启网络与无线服务，使 IP、DHCP 和 WiFi 配置立即生效
-/etc/init.d/network restart
+# 4. 重启无线服务，使 WiFi 配置立即生效
 wifi reload 2>/dev/null
 
-# 7. 脚本执行完毕后自毁 (阅后即焚)
+# 5. 脚本执行完毕后自毁 (阅后即焚)
 rm -f /etc/uci-defaults/zzz_istoreos_setup
 EOF
 
@@ -564,18 +553,10 @@ EOF
 
 # --- iStoreOS Personal 专属叠加配置开始 ---
 
-# 1. 强制开启 LAN 口的 DHCP 服务器 (基于 192.168.2.254 下发)
-uci set dhcp.lan.ignore='0' 2>/dev/null
-uci set dhcp.lan.start='100' 2>/dev/null
-uci set dhcp.lan.limit='150' 2>/dev/null
-uci set dhcp.lan.leasetime='12h' 2>/dev/null
-uci set dhcp.lan.dhcpv4='server' 2>/dev/null
-uci commit dhcp
-
-# 2. 替换 root 密码为 password 的哈希值，跳过 iStoreOS 强制密码向导
+# 1. 替换 root 密码为 password 的哈希值，跳过 iStoreOS 强制密码向导
 sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
 
-# 3. 首次开机自动唤醒 WiFi 并修改参数（后台轮询）
+# 2. 首次开机自动唤醒 WiFi 并修改参数（后台轮询）
 (
     # 循环等待，直到系统内核成功挂载 wlan 物理接口
     for i in $(seq 1 15); do
@@ -607,8 +588,7 @@ sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
     wifi up 2>/dev/null
 ) &
 
-# 4. 重启网络与无线服务，使 IP、DHCP 和 WiFi 配置立即生效
-/etc/init.d/network restart
+# 3. 重启无线服务，使 WiFi 配置立即生效
 wifi reload 2>/dev/null
 # --- iStoreOS Personal 专属叠加配置结束 ---
 EOF
