@@ -259,30 +259,40 @@ elif [ "$FIRMWARE_TYPE" == "openwrt" ] || [ "$FIRMWARE_TYPE" == "istoreos" ]; th
         fi
     fi
 
-        # 单独处理 Diskman 的源码拉取
-        if [ "$FIRMWARE_TYPE" == "openwrt" ] || { [ "$FIRMWARE_TYPE" == "istoreos" ] && [ "$BUILD_TYPE" == "personal" ]; }; then
-            echo "====== 为 $FIRMWARE_TYPE ($BUILD_TYPE) 专属拉取 Diskman 源码 ======"
-            git clone --depth 1 https://github.com/lisaac/luci-app-diskman package/custom/luci-app-diskman
-        fi
+    # 单独处理 Diskman 的源码拉取
+    if [ "$FIRMWARE_TYPE" == "openwrt" ] || { [ "$FIRMWARE_TYPE" == "istoreos" ] && [ "$BUILD_TYPE" == "personal" ]; }; then
+        echo "====== 为 $FIRMWARE_TYPE ($BUILD_TYPE) 专属拉取 Diskman 源码 ======"
+        git clone --depth 1 https://github.com/lisaac/luci-app-diskman package/custom/luci-app-diskman
+    fi
 
         # 分支独有逻辑
-        if [ "$FIRMWARE_TYPE" == "openwrt" ]; then
-            curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh | bash -s -- --no-sfe
+    if [ "$FIRMWARE_TYPE" == "openwrt" ]; then
+        curl -sSL https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh | bash -s -- --no-sfe
         elif [ "$FIRMWARE_TYPE" == "istoreos" ]; then
             find package/ feeds/ -path "*/luci-static/quickstart/*.js" -exec sed -i 's|admin/services/appfilter|admin/services/oaf|g' {} + 2>/dev/null || true
-        # ================= 溯源打击 =================
-        # 铲除 iStoreOS 针对 Amlogic 平台单网口强制分配 DHCP 的毒瘤
-        ISTORE_NET_BOARD="target/linux/amlogic/base-files/etc/board.d/02_network"
-        if [ -f "$ISTORE_NET_BOARD" ]; then
-            sed -i "s/ucidef_set_interface_lan 'eth0' 'dhcp'/ucidef_set_interface_lan 'eth0' 'static'/g" "$ISTORE_NET_BOARD"
-            echo "✅ 已将 iStoreOS 底层 Amlogic 单网口强制 DHCP 修复为 Static 静态！"
-        fi
-        BANNER_FILE=$(find package/ base-files/ -type f -name "banner" 2>/dev/null | head -n 1)
-        if [ -n "$BANNER_FILE" ]; then
-            sed -i 's/                                  Powered by OpenWRT/ Compiled by 粉墨悲欢@恩山        Powered by OpenWRT/g' "$BANNER_FILE"
+
+            # ================= 溯源打击 =================
+            # 铲除 iStoreOS 针对 Amlogic 平台单网口强制分配 DHCP 的毒瘤
+            ISTORE_NET_BOARD="target/linux/amlogic/base-files/etc/board.d/02_network"
+            if [ -f "$ISTORE_NET_BOARD" ]; then
+                sed -i "s/ucidef_set_interface_lan 'eth0' 'dhcp'/ucidef_set_interface_lan 'eth0' 'static'/g" "$ISTORE_NET_BOARD"
+                echo "✅ 已将 iStoreOS 底层 Amlogic 单网口强制 DHCP 修复为 Static 静态！"
+            fi
+
+            # 铲除 iStoreOS 在编译期对 192.168.1.1 的动态劫持
+            ISTORE_MAKEFILE="package/istoreos-files/Makefile"
+            if [ -f "$ISTORE_MAKEFILE" ]; then
+                sed -i 's/"192.168.100.1"/"192.168.1.1"/g' "$ISTORE_MAKEFILE"
+                sed -i "s/'192.168.100.1'/'192.168.1.1'/g" "$ISTORE_MAKEFILE"
+                echo "✅ 成功铲除 iStoreOS Makefile 中的 192.168.100.1 动态注入！"
+            fi
+
+            BANNER_FILE=$(find package/ base-files/ -type f -name "banner" 2>/dev/null | head -n 1)
+            if [ -n "$BANNER_FILE" ]; then
+                sed -i 's/                                  Powered by OpenWRT/ Compiled by 粉墨悲欢@恩山        Powered by OpenWRT/g' "$BANNER_FILE"
+            fi
         fi
     fi
-fi
 
 # ==========================================
 # 6. OAF 翻译缺失动态修复 (带向前兼容判断)
