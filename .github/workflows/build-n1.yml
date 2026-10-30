@@ -476,28 +476,30 @@ jobs:
           if [ "${{ env.BUILD_LOWER }}" == "public" ]; then
             echo "====== 注入 Public 科学套件 ======"
           
-            # 优雅地批量注入 Nikki 的底层依赖和 USB 网络共享驱动
+            # 优雅地批量注入 Nikki 的底层依赖、USB 网络共享驱动及 RTL8153 网卡驱动
             echo "👉 [DEBUG] 注入公共基础网络与内核依赖..."
             cat >> openwrt/.config <<EOF
-          # 基础工具类
+          # --- 1. Nikki (科学代理) 底层核心与网络依赖 ---
           CONFIG_PACKAGE_ca-bundle=y
           CONFIG_PACKAGE_curl=y
           CONFIG_PACKAGE_yq=y
-          CONFIG_PACKAGE_usbutils=y
-
-          # 网络和防火墙类
           CONFIG_PACKAGE_firewall4=y
           CONFIG_PACKAGE_ip-full=y
-
-          # 内核模块类 (kmod)
           CONFIG_PACKAGE_kmod-inet-diag=y
           CONFIG_PACKAGE_kmod-nft-socket=y
           CONFIG_PACKAGE_kmod-nft-tproxy=y
           CONFIG_PACKAGE_kmod-tun=y
+          
+          # --- 2. USB 手机网络共享与虚拟网卡驱动 (RNDIS/CDC) ---
+          CONFIG_PACKAGE_usbutils=y
           CONFIG_PACKAGE_kmod-dummy=y
           CONFIG_PACKAGE_kmod-usb-net=y
           CONFIG_PACKAGE_kmod-usb-net-rndis=y
           CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
+          
+          # --- 3. RTL8152/8153 USB 转千兆网卡驱动与微代码固件 ---
+          CONFIG_PACKAGE_kmod-usb-net-rtl8152=y
+          CONFIG_PACKAGE_r8152-firmware=y
           EOF
 
             # --- 新增日志输出开始 ---
