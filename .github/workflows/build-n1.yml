@@ -239,7 +239,7 @@ jobs:
             mkdir openwrt && cd openwrt
             git init
             git remote add origin $REPO_URL
-            git fetch --depth 1 origin "$TARGET_BRANCH"
+            git fetch origin "$TARGET_BRANCH"
             git checkout FETCH_HEAD
           else
             cd openwrt

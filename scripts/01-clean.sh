@@ -2,7 +2,7 @@
 # 01-clean.sh
 
 # ==========================================
-# 0.5. 提取公共逻辑：Golang 升级 (必须在清理冲突前执行)
+# 1. 提取公共逻辑：Golang 升级 (必须在清理冲突前执行)
 # ==========================================
 if [[ "$FIRMWARE_TYPE" != lede* ]] && [ "$BUILD_TYPE" != "personal" ]; then
     if [[ "$TARGET_DATE_ISO" != *"2026-09-09"* ]]; then
@@ -16,7 +16,7 @@ if [[ "$FIRMWARE_TYPE" != lede* ]] && [ "$BUILD_TYPE" != "personal" ]; then
 fi
 
 # ==========================================
-# 1. 统一处理：卸载系统自带的冲突插件 (全局生效)
+# 2. 统一处理：卸载系统自带的冲突插件 (全局生效)
 # ==========================================
 echo "====== 统一卸载冲突插件 ======"
 conflict_plugins=(
@@ -33,7 +33,7 @@ for plugin in "${conflict_plugins[@]}"; do
 done
 
 # ==========================================
-# 2. 统一处理：清理代理底层老旧核心 (全局生效)
+# 3. 统一处理：清理代理底层老旧核心 (全局生效)
 # ==========================================
 echo "====== 统一清理老旧底层代理核心 ======"
 rm -rf feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,v2ray-plugin,xray-plugin,geoview,shadow-tls} 2>/dev/null

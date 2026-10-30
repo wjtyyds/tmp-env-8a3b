@@ -2,7 +2,7 @@
 # 03-patch.sh
 
 # ==========================================
-# 5. 差异化操作：各分支专有的修补逻辑
+# 1. 差异化操作：各分支专有的修补逻辑
 # ==========================================
 echo "====== 开始各分支的差异化特征修改 ======"
 
@@ -130,7 +130,7 @@ elif [ "$FIRMWARE_TYPE" == "openwrt" ] || [ "$FIRMWARE_TYPE" == "istoreos" ]; th
 fi
 
 # ==========================================
-# 6. OAF 翻译缺失动态修复
+# 2. OAF 翻译缺失动态修复
 # ==========================================
 echo "====== 检查并修复 OAF 翻译文件 ======"
 OAF_PO_FILE=$(find package/custom/ -name "oaf.po" 2>/dev/null | head -n 1)
@@ -142,7 +142,7 @@ if [ -n "$OAF_PO_FILE" ] && [ -f "$OAF_PO_FILE" ]; then
 fi
 
 # ==========================================
-# 7. 本地化环境与守护脚本注入 (静态引擎挂载)
+# 3. 本地化环境与守护脚本注入 (静态引擎挂载)
 # ==========================================
 FILES_DIR="package/base-files/files"
 mkdir -p ${FILES_DIR}/etc/uci-defaults
@@ -161,7 +161,7 @@ echo 'BUILD_AUTHOR="粉墨悲欢@EnShan"' >> ${FILES_DIR}/etc/os-release
 echo "# Firmware compiled and customized by 粉墨悲欢" >> ${FILES_DIR}/etc/profile
 
 # ==========================================
-# 8. lede-native 专属综合配置 (编译期注入)
+# 4. lede-native 专属综合配置 (编译期注入)
 # ==========================================
 if [ "$FIRMWARE_TYPE" == "lede-native" ]; then
     echo "====== [lede-native] 强注 Amlogic 底层温度传感器驱动 ======"
@@ -176,7 +176,7 @@ if [ "$FIRMWARE_TYPE" == "lede-native" ]; then
 fi
 
 # ==========================================
-# 9. 针对特定版本强制使用预编译的 xray 核心
+# 5. 针对特定版本强制使用预编译的 xray 核心
 # ==========================================
 if [ "$CUSTOM_TAG" == "R26.10.11" ]; then
     echo "====== 触发专属逻辑：替换 xray-core Makefile 为本地直装模式 ======"
