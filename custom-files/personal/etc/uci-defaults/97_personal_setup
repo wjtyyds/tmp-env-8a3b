@@ -1,0 +1,40 @@
+#!/bin/sh
+
+uci delete network.lan.type 2>/dev/null
+uci set network.lan.device='eth0'
+uci set network.lan.ifname='eth0'
+uci set network.lan.proto='static'
+uci delete network.lan.ipaddr
+uci add_list network.lan.ipaddr='192.168.2.254/24'
+uci set network.lan.gateway='192.168.2.1'
+uci delete network.lan.dns
+uci add_list network.lan.dns='192.168.2.1'
+
+uci set network.wan=interface
+uci set network.wan.proto='pppoe'
+uci set network.wan.device='eth0'
+uci set network.wan.ifname='eth0'
+uci set network.wan.username='__PPPOE_USER__'
+uci set network.wan.password='__PPPOE_PASS__'
+uci set network.wan.ipv6='auto'
+uci set network.wan.norelease='1'
+uci set network.wan.multipath='off'
+uci commit network
+
+mkdir -p /etc/crontabs
+if ! grep -q "drop_caches" /etc/crontabs/root 2>/dev/null; then
+    echo "0 22 * * * sync; echo 3 > /proc/sys/vm/drop_caches" >> /etc/crontabs/root
+fi
+
+uci set AdGuardHome.AdGuardHome.configpath='/etc/AdGuardHome.yaml'
+uci commit AdGuardHome
+
+if grep -qi 'istoreos' /etc/os-release; then
+    sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
+    uci set luci.main.mediaurlbase='/luci-static/aurora' 2>/dev/null
+    uci commit luci 2>/dev/null
+fi
+
+[ -f /etc/AdGuardHome_private.yaml ] && mv -f /etc/AdGuardHome_private.yaml /etc/AdGuardHome.yaml
+
+rm -f /etc/uci-defaults/97_personal_setup

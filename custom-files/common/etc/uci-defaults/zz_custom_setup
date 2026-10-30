@@ -1,0 +1,34 @@
+#!/bin/sh
+
+# 1. OAF 模块加载 (安全判断：存在内核文件才加载)
+if [ -f /root/oaf.ko ]; then
+    KVER=$(uname -r)
+    mkdir -p /lib/modules/$KVER
+    mv /root/oaf.ko /lib/modules/$KVER/
+    depmod -a
+    echo "oaf" > /etc/modules.d/99-oaf
+    modprobe oaf
+fi
+
+# 2. 极致洁癖的 sysctl 注入
+sed -i '/net.bridge.bridge-nf-call/d' /etc/sysctl.conf
+cat << 'SYSCTL_EOF' >> /etc/sysctl.conf
+
+# Network routing & bridge optimization
+net.bridge.bridge-nf-call-iptables=0
+net.bridge.bridge-nf-call-ip6tables=0
+net.bridge.bridge-nf-call-arptables=0
+SYSCTL_EOF
+sysctl -p
+
+# 3. 设置 AdGuardHome 标准路径
+uci set AdGuardHome.AdGuardHome.binpath='/usr/bin/AdGuardHome/AdGuardHome' 2>/dev/null
+uci set AdGuardHome.AdGuardHome.workdir='/usr/bin/AdGuardHome' 2>/dev/null
+uci set AdGuardHome.AdGuardHome.configpath='/etc/AdGuardHome.yaml' 2>/dev/null
+uci commit AdGuardHome 2>/dev/null
+
+# 4. 彻底清理跑分计划任务 (安全容错，非 LEDE 固件执行此句无任何影响)
+sed -i '/coremark/d' /etc/crontabs/root 2>/dev/null
+/etc/init.d/cron restart 2>/dev/null
+
+rm -f /etc/uci-defaults/zz_custom_setup

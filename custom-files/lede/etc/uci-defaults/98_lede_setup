@@ -1,0 +1,5 @@
+#!/bin/sh
+uci delete uhttpd.main.listen_https 2>/dev/null
+uci commit uhttpd 2>/dev/null
+/etc/init.d/uhttpd restart 2>/dev/null
+rm -f /etc/uci-defaults/98_lede_setup

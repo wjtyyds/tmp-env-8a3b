@@ -1,0 +1,16 @@
+#!/bin/sh
+# 路由器底层动态判断：只有确认是 iStoreOS 才会执行
+if grep -qi 'istoreos' /etc/os-release; then
+    # 1. 替换 root 密码为 password 的哈希值，跳过向导
+    sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
+
+    # 2. 强制设置默认主题为 Aurora，配置侧边栏并关闭快捷工具栏
+    uci set luci.main.mediaurlbase='/luci-static/aurora' 2>/dev/null
+    uci commit luci 2>/dev/null
+    if [ -f /etc/config/aurora ]; then
+        uci set aurora.theme.nav_type='sidebar' 2>/dev/null
+        uci set aurora.theme.toolbar_enabled='0' 2>/dev/null
+        uci commit aurora 2>/dev/null
+    fi
+fi
+rm -f /etc/uci-defaults/zzz_istoreos_setup

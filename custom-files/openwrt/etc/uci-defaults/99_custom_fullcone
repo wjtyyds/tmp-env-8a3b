@@ -1,0 +1,11 @@
+#!/bin/sh
+# 检查是否已经挂载了防火墙自定义脚本
+if ! uci show firewall | grep -q "path='/etc/firewall.user'"; then
+    uci add firewall include
+    uci set firewall.@include[-1].type='script'
+    uci set firewall.@include[-1].path='/etc/firewall.user'
+    uci set firewall.@include[-1].fw4_compatible='1'
+    uci commit firewall
+fi
+# 脚本使命完成，自毁（阅后即焚，不留垃圾）
+rm -f /etc/uci-defaults/99_custom_fullcone

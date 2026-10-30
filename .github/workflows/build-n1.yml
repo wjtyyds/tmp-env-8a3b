@@ -250,142 +250,26 @@ jobs:
           
           sed -i 's/^src-git helloworld/#src-git helloworld/g' feeds.conf.default
 
+      - name: Probe API Assets (前置 API 数据嗅探)
+        env:
+          GH_TOKEN: ${{ secrets.PRIVATE_TOKEN }}
+          TARGET_DATE_ISO: ${{ env.TARGET_DATE_ISO }}
+        run: |
+          chmod +x $GITHUB_WORKSPACE/scripts/00-probe.sh
+          $GITHUB_WORKSPACE/scripts/00-probe.sh
+
       - name: Update & Install Feeds
         env:
           GH_TOKEN: ${{ secrets.PRIVATE_TOKEN }}
+          FIRMWARE_LOWER: ${{ env.FIRMWARE_LOWER }}
+          BUILD_LOWER: ${{ env.BUILD_LOWER }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          FEEDS_DATE_ISO: ${{ env.FEEDS_DATE_ISO }}
+          TARGET_DATE_ISO: ${{ env.TARGET_DATE_ISO }}
+          SAFE_DATE_ISO: ${{ env.SAFE_DATE_ISO }}
         run: |
-          # [新增] 动态定义配置目录 (configs/public 或 configs/personal)
-          CONF_DIR="configs/${{ env.BUILD_LOWER }}"
-          
-          if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ] || [ "${{ env.FIRMWARE_LOWER }}" == "lede-native" ]; then
-            if [[ "${{ inputs.source_branch }}" =~ ^(istoreos-[0-9]+\.[0-9]+) ]]; then
-              BASE_FEED_VER="${BASH_REMATCH[1]}"
-              TARGET_FEEDS="${CONF_DIR}/feeds_${BASE_FEED_VER}.conf"
-            else
-              TARGET_FEEDS="${CONF_DIR}/feeds_${{ inputs.source_branch }}.conf"
-            fi
-          
-            DEFAULT_FEEDS="${CONF_DIR}/feeds_istoreos.conf"
-          
-            if [ -f "$TARGET_FEEDS" ]; then
-              echo "====== 匹配到分支专属 feeds 配置，开始注入: $TARGET_FEEDS ======"
-              cp "$TARGET_FEEDS" openwrt/feeds.conf
-            elif [ -f "$DEFAULT_FEEDS" ]; then
-              echo "====== 未匹配到专属文件，使用兜底 feeds 配置: $DEFAULT_FEEDS ======"
-              cp "$DEFAULT_FEEDS" openwrt/feeds.conf
-            else
-              echo "====== 未找到任何自定义 feeds 配置，保持源码默认状态 ======"
-            fi
-          fi
-          
-          cd openwrt
-          
-          # 【核心修复】：如果当前没有 feeds.conf (例如LEDE)，则从 default 复制，防破坏原文件
-          [ ! -f feeds.conf ] && cp feeds.conf.default feeds.conf
-          
-          # ================================================================
-          # 【动态解析】处理 feeds.conf 中的 src-include 引用
-          # 目的 1：对于常规固件，展平被引用的文件，让里面的源进入时光机回滚；
-          # 目的 2：对于 iStoreOS (特例)，保留原样不展平，从而豁免官方基础源的回滚。
-          # ================================================================
-          if grep -q '^src-include' feeds.conf 2>/dev/null; then
-              if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ]; then
-                  echo "🔧 [iStoreOS 专属逻辑] 检测到 src-include 指令，按需【保留不展平】以豁免基础官方源的时光机回滚。"
-              else
-                  echo "🔧 检测到 src-include 指令，开始展平被引用的 feeds 文件..."
-                  FLATTEN_TMP=$(mktemp)
-                  while IFS= read -r line; do
-                      # 匹配 src-include <name> <path> 格式
-                      if [[ "$line" =~ ^src-include[[:space:]]+[^[:space:]]+[[:space:]]+(.+)$ ]]; then
-                          INCLUDE_FILE=$(echo "${BASH_REMATCH[1]}" | sed -E 's/[[:space:]]+$//')
-                          if [ -f "$INCLUDE_FILE" ]; then
-                              echo "   ↪ 展平 include 文件: $INCLUDE_FILE"
-                              echo "# ===== Flattened from $INCLUDE_FILE =====" >> "$FLATTEN_TMP"
-                              cat "$INCLUDE_FILE" >> "$FLATTEN_TMP"
-                              echo "# ===== End of $INCLUDE_FILE =====" >> "$FLATTEN_TMP"
-                          else
-                              echo "   ⚠️ 警告：include 文件 $INCLUDE_FILE 不存在，保留原行"
-                              echo "$line" >> "$FLATTEN_TMP"
-                          fi
-                      else
-                          echo "$line" >> "$FLATTEN_TMP"
-                      fi
-                  done < feeds.conf
-                  mv "$FLATTEN_TMP" feeds.conf
-                  echo "✅ feeds.conf 展平完成 (共 $(wc -l < feeds.conf) 行)"
-              fi
-          fi
-          
-          if [[ "${{ env.FIRMWARE_LOWER }}" == "istoreos" || "${{ env.FIRMWARE_LOWER }}" == lede* ]] && { [ -n "$FEEDS_DATE_ISO" ] || [ -n "$TARGET_DATE_ISO" ]; }; then
-          
-              # 【核心联动】：判断是否启用了 iStoreOS 的底层安全基准时间
-              if [ "${{ env.FIRMWARE_LOWER }}" == "istoreos" ] && [ -n "${{ env.SAFE_DATE_ISO }}" ]; then
-                  ACTUAL_FEEDS_DATE="${{ env.SAFE_DATE_ISO }}"
-                  echo "========================================================="
-                  echo "⏳ 触发 Feeds 联动时光机 (跟随底层安全基准: $ACTUAL_FEEDS_DATE)"
-                  echo "========================================================="
-              else
-                  ACTUAL_FEEDS_DATE="${FEEDS_DATE_ISO:-$TARGET_DATE_ISO}"
-                  echo "========================================================="
-                  echo "⏳ 触发 Feeds 全局极致时光机 (目标日期: $ACTUAL_FEEDS_DATE)"
-                  echo "========================================================="
-              fi
-          
-              while IFS= read -r line; do
-                  # 忽略空行和带 # 注释的行 (完美避开 helloworld)
-                  [[ -z "$line" || "$line" == \#* ]] && continue
-          
-                  if echo "$line" | grep -q "^src-git"; then
-                      feed_name=$(echo "$line" | awk '{print $2}')
-                      feed_source=$(echo "$line" | awk '{print $3}')
-          
-                      # 智能解析链接和分支：兼容带 `;` 和不带 `;` 的格式
-                      if [[ "$feed_source" == *";"* ]]; then
-                          repo_url=$(echo "$feed_source" | cut -d';' -f1)
-                          branch_name=$(echo "$feed_source" | cut -d';' -f2)
-                      elif [[ "$feed_source" == *"^"* ]]; then
-                          continue # 已经显式锁定 Hash 的源直接跳过
-                      else
-                          repo_url="$feed_source"
-                          branch_name=""
-                      fi
-          
-                      # 转换官方 git.openwrt.org 源为 Github 镜像源，以便调用 API 查询
-                      api_repo_url=$(echo "$repo_url" | sed -e 's|https://git.openwrt.org/feed/|https://github.com/openwrt/|' -e 's|https://git.openwrt.org/project/|https://github.com/openwrt/|')
-          
-                      if [[ "$api_repo_url" == *"github.com"* ]]; then
-                          repo_path=$(echo "$api_repo_url" | sed -E 's|.*github.com/([^/]+/[^/.]+)(\.git)?|\1|')
-          
-                          if [ -n "$branch_name" ]; then
-                              api_url="https://api.github.com/repos/$repo_path/commits?sha=$branch_name&until=$ACTUAL_FEEDS_DATE&per_page=1"
-                          else
-                              api_url="https://api.github.com/repos/$repo_path/commits?until=$ACTUAL_FEEDS_DATE&per_page=1"
-                          fi
-          
-                          commit_hash=$(curl -sL -H "Authorization: Bearer $GH_TOKEN" "$api_url" | jq -r '.[0].sha' 2>/dev/null || true)
-          
-                          if [ "$commit_hash" != "null" ] && [ -n "$commit_hash" ]; then
-                              short_hash=${commit_hash:0:7}
-                              echo "👉 [Feeds时光机] 成功锁定 | 源: $feed_name | 哈希: $short_hash"
-                              escaped_line=$(echo "$line" | sed 's/[./*?|]/\\&/g')
-                              sed -i "s|^$escaped_line$|src-git $feed_name $repo_url^$commit_hash|g" feeds.conf
-                          else
-                              echo "⚠️ [Feeds时光机] API查询无果，保持原样 | 源: $feed_name"
-                          fi
-                      else
-                          echo "⚠️ [Feeds时光机] 非 Github 仓库无法调用 API，跳过 | 源: $feed_name"
-                      fi
-                  fi
-              done < feeds.conf
-          
-              echo "========================================================="
-              echo "✅ Feeds 时光机处理完毕，最终生效的 feeds.conf 如下："
-              cat feeds.conf
-              echo "========================================================="
-          fi
-          
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a -f < /dev/null
+          chmod +x $GITHUB_WORKSPACE/scripts/04-feeds.sh
+          $GITHUB_WORKSPACE/scripts/04-feeds.sh
 
       - name: Load Custom Plugins & Uninstall Conflicts
         env:
@@ -401,310 +285,32 @@ jobs:
           CUSTOM_TAG: ${{ inputs.custom_tag }}
         run: |
           cd openwrt
-          chmod +x $GITHUB_WORKSPACE/scripts/diy-part2.sh
-          $GITHUB_WORKSPACE/scripts/diy-part2.sh
+          chmod +x $GITHUB_WORKSPACE/scripts/01-clean.sh
+          chmod +x $GITHUB_WORKSPACE/scripts/02-fetch.sh
+          chmod +x $GITHUB_WORKSPACE/scripts/03-patch.sh
+          $GITHUB_WORKSPACE/scripts/01-clean.sh
+          $GITHUB_WORKSPACE/scripts/02-fetch.sh
+          $GITHUB_WORKSPACE/scripts/03-patch.sh
 
       - name: Load Configuration
+        env:
+          FIRMWARE_LOWER: ${{ env.FIRMWARE_LOWER }}
+          BUILD_LOWER: ${{ env.BUILD_LOWER }}
+          TARGET_DATE_ISO: ${{ env.TARGET_DATE_ISO }}
         run: |
-          CONF_NAME="${{ env.FIRMWARE_LOWER }}"
-          CONF_DIR="configs/${{ env.BUILD_LOWER }}"
-          
-          if [ ! -f "${CONF_DIR}/${CONF_NAME}.config" ] && [[ "${CONF_NAME}" == "lede-native" ]]; then
-            echo "未找到 ${CONF_DIR}/lede-native.config，降级使用共用的 lede.config..."
-            cp ${CONF_DIR}/lede.config openwrt/.config
-          else
-            echo "加载配置文件: ${CONF_DIR}/${CONF_NAME}.config"
-            cp ${CONF_DIR}/${CONF_NAME}.config openwrt/.config
-          fi
-          
-          sed -i 's/CONFIG_KERNEL_DEBUG_INFO=y/# CONFIG_KERNEL_DEBUG_INFO is not set/g' openwrt/.config
-          sed -i 's/CONFIG_KERNEL_DEBUG_KERNEL=y/# CONFIG_KERNEL_DEBUG_KERNEL is not set/g' openwrt/.config
-          sed -i 's/CONFIG_GDB=y/# CONFIG_GDB is not set/g' openwrt/.config
-          sed -i 's/CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Client=y/# CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Client is not set/g' openwrt/.config
-          sed -i 's/CONFIG_PACKAGE_shadowsocks-rust-sslocal=y/# CONFIG_PACKAGE_shadowsocks-rust-sslocal is not set/g' openwrt/.config
-          echo "CONFIG_DEVEL=y" >> openwrt/.config
-          echo "CONFIG_BPF_TOOLCHAIN_HOST=y" >> openwrt/.config
-          
-          # 开启全局 ImmortalWrt 兜底
-          sed -i '/CONFIG_LOCALMIRROR/d' openwrt/.config
-          echo 'CONFIG_LOCALMIRROR="https://sources.immortalwrt.org"' >> openwrt/.config
-
-          echo "====== 注入全局基础定制插件 ======"
-          cat >> openwrt/.config <<EOF
-          CONFIG_PACKAGE_luci-theme-aurora=y
-          CONFIG_PACKAGE_luci-app-aurora-config=y
-          CONFIG_PACKAGE_luci-app-adguardhome=y
-          CONFIG_PACKAGE_luci-app-lucky=y
-          CONFIG_PACKAGE_luci-app-openclash=y
-          CONFIG_PACKAGE_luci-app-oaf=y
-          CONFIG_PACKAGE_luci-app-diskman=y
-          CONFIG_PACKAGE_luci-app-diskman_INCLUDE_lsblk=y
-          EOF
-
-          if [[ "${CONF_NAME}" == lede* ]]; then
-            if [ "${CONF_NAME}" == "lede-native" ]; then
-              sed -i 's/CONFIG_PACKAGE_brcmfmac-firmware-usb=y/# CONFIG_PACKAGE_brcmfmac-firmware-usb is not set/g' openwrt/.config
-              sed -i 's/CONFIG_BRCMFMAC_USB=y/# CONFIG_BRCMFMAC_USB is not set/g' openwrt/.config
-            elif [ "${CONF_NAME}" == "lede" ]; then
-              sed -i 's/# CONFIG_TARGET_ROOTFS_TARGZ is not set/CONFIG_TARGET_ROOTFS_TARGZ=y/g' openwrt/.config
-              echo "CONFIG_TARGET_ROOTFS_TARGZ=y" >> openwrt/.config
-              sed -i 's/CONFIG_TARGET_ROOTFS_EXT4FS=y/# CONFIG_TARGET_ROOTFS_EXT4FS is not set/g' openwrt/.config
-              sed -i 's/CONFIG_TARGET_ROOTFS_SQUASHFS=y/# CONFIG_TARGET_ROOTFS_SQUASHFS is not set/g' openwrt/.config
-              sed -i '/CONFIG_TARGET_EXT4_/d' openwrt/.config
-              sed -i '/CONFIG_TARGET_IMAGES_GZIP/d' openwrt/.config
-              sed -i '/CONFIG_TARGET_ROOTFS_PARTSIZE/d' openwrt/.config
-            fi
-          
-            sed -i 's/CONFIG_PACKAGE_libustream-openssl=y/# CONFIG_PACKAGE_libustream-openssl is not set/g' openwrt/.config
-            sed -i 's/CONFIG_DEFAULT_libustream-openssl=y/# CONFIG_DEFAULT_libustream-openssl is not set/g' openwrt/.config
-            cat >> openwrt/.config <<EOF
-          CONFIG_PACKAGE_libustream-mbedtls=y
-          CONFIG_DEFAULT_libustream-mbedtls=y
-          CONFIG_PACKAGE_ca-bundle=y
-          CONFIG_PACKAGE_ca-certificates=y
-          EOF
-
-          elif [ "${CONF_NAME}" == "openwrt" ]; then
-            cat >> openwrt/.config <<EOF
-          CONFIG_PACKAGE_luci-app-turboacc=y
-          CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_OFFLOADING=y
-          CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_BBR_CCA=y
-          CONFIG_PACKAGE_luci-app-turboacc_INCLUDE_NFT_FULLCONE=y
-          EOF
-          fi
-
-          if [ "${{ env.BUILD_LOWER }}" == "public" ]; then
-            echo "====== 注入 Public 科学套件 ======"
-          
-            # 优雅地批量注入 Nikki 的底层依赖、USB 网络共享驱动及 RTL8153 网卡驱动
-            echo "👉 [DEBUG] 注入公共基础网络与内核依赖..."
-            cat >> openwrt/.config <<EOF
-          # --- 1. Nikki (科学代理) 底层核心与网络依赖 ---
-          CONFIG_PACKAGE_ca-bundle=y
-          CONFIG_PACKAGE_curl=y
-          CONFIG_PACKAGE_yq=y
-          CONFIG_PACKAGE_firewall4=y
-          CONFIG_PACKAGE_ip-full=y
-          CONFIG_PACKAGE_kmod-inet-diag=y
-          CONFIG_PACKAGE_kmod-nft-socket=y
-          CONFIG_PACKAGE_kmod-nft-tproxy=y
-          CONFIG_PACKAGE_kmod-tun=y
-          
-          # --- 2. USB 手机网络共享与虚拟网卡驱动 (RNDIS/CDC) ---
-          CONFIG_PACKAGE_usbutils=y
-          CONFIG_PACKAGE_kmod-dummy=y
-          CONFIG_PACKAGE_kmod-usb-net=y
-          CONFIG_PACKAGE_kmod-usb-net-rndis=y
-          CONFIG_PACKAGE_kmod-usb-net-cdc-ether=y
-          
-          # --- 3. RTL8152/8153 USB 转千兆网卡驱动与微代码固件 ---
-          CONFIG_PACKAGE_kmod-usb-net-rtl8152=y
-          CONFIG_PACKAGE_r8152-firmware=y
-          
-          # --- 4. Open-Box (代理面板) 底层依赖 ---
-          CONFIG_PACKAGE_kmod-nft-queue=y
-          CONFIG_PACKAGE_kmod-nft-nat=y
-          CONFIG_PACKAGE_kmod-veth=y
-          
-          EOF
-
-            # --- 新增日志输出开始 ---
-            echo "👉 [DEBUG] 当前注入拦截变量判断："
-            echo "  - TARGET_DATE_ISO (包含检查): [${{ env.TARGET_DATE_ISO }}]"
-            # --- 新增日志输出结束 ---
-          
-            if [[ "${{ env.TARGET_DATE_ISO }}" != *"2026-09-09"* ]]; then
-              echo "✅ [DEBUG] 未命中 09.09 拦截，正常注入 Passwall 等套件。"
-              cat >> openwrt/.config <<EOF
-          CONFIG_PACKAGE_luci-app-passwall=y
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Geoview=y
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Haproxy=y
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Hysteria=y
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Shadowsocks_Rust_Client=y
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_ShadowsocksR_Libev_Client=y
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=y
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Geodata=y
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Plugin=y
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
-          CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray_Plugin=y
-          EOF
-              echo "CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y" >> openwrt/.config
-            else
-              echo "⛔ [DEBUG] 已命中 09.09，成功拦截 Passwall 注入！"
-            fi
-          
-            # 替换为通配符包含匹配
-            if [[ "${{ env.TARGET_DATE_ISO }}" != *"2026-09-09"* ]] && [[ "${{ env.TARGET_DATE_ISO }}" != *"2026-09-16"* ]]; then
-              echo "✅ [DEBUG] 未命中 09.09/09.16 拦截，正常注入 Daede 套件。"
-              cat >> openwrt/.config <<EOF
-          CONFIG_PACKAGE_luci-app-daede=y
-          CONFIG_PACKAGE_dae=y
-          EOF
-            else
-              echo "⛔ [DEBUG] 已命中拦截日期，成功拦截 Daede 注入！"
-            fi
-          fi
-          cd openwrt
-          make defconfig
+          chmod +x $GITHUB_WORKSPACE/scripts/06-config.sh
+          $GITHUB_WORKSPACE/scripts/06-config.sh
 
       - name: Inject Binaries & Configs (原生编译前置注入)
         env:
           GH_TOKEN: ${{ secrets.PRIVATE_TOKEN }}
           PRIVATE_REPO: ${{ secrets.PRIVATE_REPO }}
           BUILD_LOWER: ${{ env.BUILD_LOWER }}
+          FIRMWARE_LOWER: ${{ env.FIRMWARE_LOWER }}
           TARGET_DATE_ISO: ${{ env.TARGET_DATE_ISO }}
         run: |
-          echo "====== 原生编译：前置注入最新内核与私密配置 ======"
-          BASE_FILES="openwrt/package/base-files/files"
-          
-          mkdir -p $BASE_FILES/usr/lib/adg_core
-          mkdir -p $BASE_FILES/usr/bin
-          mkdir -p $BASE_FILES/etc/openclash/core
-          mkdir -p $BASE_FILES/etc/init.d
-          mkdir -p $BASE_FILES/etc/rc.d
-          
-          echo "提取官方 AdGuardHome (融入时光机，且强制稳定版)..."
-          if [ -n "$TARGET_DATE_ISO" ]; then
-              AGH_API="https://api.github.com/repos/AdguardTeam/AdGuardHome/releases?per_page=50"
-              AGH_URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$AGH_API" | jq -r --arg date "$TARGET_DATE_ISO" 'map(select(.published_at < $date and .prerelease == false)) | .[0].assets[] | select(.name | contains("linux_arm64.tar.gz")) | .browser_download_url' | head -n 1)
-          else
-              AGH_API="https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest"
-              AGH_URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$AGH_API" | grep "browser_download_url" | grep "linux_arm64.tar.gz" | head -n 1 | cut -d '"' -f 4)
-          fi
-          
-          if [ -n "$AGH_URL" ] && [ "$AGH_URL" != "null" ]; then
-              echo "✅ 锁定 AdGuardHome 稳定版链接: $AGH_URL"
-              wget -qO /tmp/agh.tar.gz "$AGH_URL"
-              tar -xzf /tmp/agh.tar.gz -C /tmp/
-              mv /tmp/AdGuardHome/AdGuardHome $BASE_FILES/usr/lib/adg_core/
-              chmod 755 $BASE_FILES/usr/lib/adg_core/AdGuardHome
-          fi
-          
-          echo "提取 Lucky 并进行源码级劫持..."
-          mkdir -p openwrt/custom_bins
-          if [ "$BUILD_LOWER" == "public" ]; then
-            LUCKY_FILE="lucky_2.27.2_Linux_arm64_wanji_docker.tar.gz"
-          else
-            LUCKY_FILE="lucky_2.27.2_Linux_arm64_wanji.tar.gz"
-          fi
-          
-          if [ -n "$PRIVATE_REPO" ]; then
-            gh release download "Private-Configs" -R "$PRIVATE_REPO" -p "$LUCKY_FILE" --clobber >/dev/null 2>&1 || true
-          fi
-          
-          if [ -f "$LUCKY_FILE" ]; then
-            tar -xzf "$LUCKY_FILE" -C /tmp/
-            mv $(find /tmp/ -type f -name "lucky" | head -n 1) openwrt/custom_bins/lucky
-            chmod 755 openwrt/custom_bins/lucky
-            sed -i 's|$(PKG_BUILD_DIR)[^ ]*lucky|$(TOPDIR)/custom_bins/lucky|g' openwrt/package/custom/lucky/lucky/Makefile
-          fi
-          
-          echo "提取 OpenClash Meta (融入时光机)..."
-          if [ -n "$TARGET_DATE_ISO" ]; then
-              CORE_HASH=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/vernesong/OpenClash/commits?sha=core&until=$TARGET_DATE_ISO&per_page=1" | jq -r '.[0].sha' 2>/dev/null || true)
-              if [ "$CORE_HASH" == "null" ] || [ -z "$CORE_HASH" ]; then CORE_HASH="core"; fi
-          else
-              CORE_HASH="core"
-          fi
-          
-          META_URL="https://raw.githubusercontent.com/vernesong/OpenClash/${CORE_HASH}/master/meta/clash-linux-arm64.tar.gz"
-          echo "✅ 锁定 Meta Core 链接: $META_URL"
-          wget -qO /tmp/clash_meta.tar.gz "$META_URL" || true
-          if [ -f /tmp/clash_meta.tar.gz ]; then
-              tar -xzf /tmp/clash_meta.tar.gz -C /tmp/ || true
-              mv /tmp/clash $BASE_FILES/etc/openclash/core/clash_meta || true
-              chmod 755 $BASE_FILES/etc/openclash/core/clash_meta || true
-          fi
-          
-          if [ "$BUILD_LOWER" == "personal" ]; then
-              echo "解压私有配置..."
-              if [ -n "$PRIVATE_REPO" ]; then
-                  gh release download "Private-Configs" -R "$PRIVATE_REPO" -p "private_config.zip" --clobber >/dev/null 2>&1 || true
-                  if [ -f "private_config.zip" ]; then
-                      unzip -q "private_config.zip" -d /tmp/private_conf/ || true
-                      [ -f "/tmp/private_conf/AdGuardHome.yaml" ] && mv /tmp/private_conf/AdGuardHome.yaml $BASE_FILES/etc/AdGuardHome_private.yaml
-                      LUCKY_ZIP=$(ls /tmp/private_conf/lucky_*.zip 2>/dev/null | head -n 1)
-                      if [ -n "$LUCKY_ZIP" ]; then
-                          mkdir -p $BASE_FILES/etc/config/lucky.daji
-                          unzip -q -o "$LUCKY_ZIP" -d $BASE_FILES/etc/config/lucky.daji/
-                      fi
-                  fi
-              fi
-          fi
-          
-          echo "注入 AdGuardHome 引导脚本..."
-          cat << 'EOF' > $BASE_FILES/etc/init.d/ign
-          #!/bin/sh /etc/rc.common
-          START=99
-          start() {
-              (
-                  sleep 5
-                  IS_EMMC=0
-                  if mount | grep -E 'on /boot |on /rom |on / ' | grep -q "mmcblk"; then
-                    IS_EMMC=1
-                  fi
-          
-                  if [ -f /usr/lib/adg_core/AdGuardHome ]; then
-                      if [ "$IS_EMMC" = "1" ]; then
-                          if [ "%%FIRMWARE_TYPE%%" = "istoreos" ] || [ "%%FIRMWARE_TYPE%%" = "lede-native" ]; then
-                              DATA_DIR="/opt/AdGuardHome"
-                          else
-                              DATA_DIR="/mnt/mmcblk2p4/AdGuardHome"
-                          fi
-
-                          mkdir -p "$DATA_DIR/data"
-
-                          cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
-                          chmod 755 "$DATA_DIR/AdGuardHome"
-
-                          [ -d /usr/bin/AdGuardHome_data ] && cp -rn /usr/bin/AdGuardHome_data/* "$DATA_DIR/" 2>/dev/null
-
-                          rm -rf /usr/bin/AdGuardHome
-                          ln -sf "$DATA_DIR" /usr/bin/AdGuardHome
-
-                          rm -rf /usr/lib/adg_core
-                          rm -rf /usr/bin/AdGuardHome_data
-                      else
-
-                          DATA_DIR="/usr/bin/AdGuardHome_data"
-                          mkdir -p "$DATA_DIR"
-          
-          
-                          cp -n /usr/lib/adg_core/AdGuardHome "$DATA_DIR/AdGuardHome"
-                          chmod 755 "$DATA_DIR/AdGuardHome"
-          
-                          rm -rf /usr/bin/AdGuardHome
-                          ln -sf "$DATA_DIR" /usr/bin/AdGuardHome
-                      fi
-                      /etc/init.d/AdGuardHome restart 2>/dev/null
-                  fi
-          
-                  if [ "$IS_EMMC" = "1" ]; then
-                      rm -f /etc/rc.d/S99ign
-                      rm -f /etc/init.d/ign
-                  fi
-              ) &
-          }
-          EOF
-          chmod +x $BASE_FILES/etc/init.d/ign
-          
-          # 将流水线面板选中的固件类型直接烙印到启动脚本里
-          sed -i "s/%%FIRMWARE_TYPE%%/${{ env.FIRMWARE_LOWER }}/g" $BASE_FILES/etc/init.d/ign
-          
-          ln -sf ../init.d/ign $BASE_FILES/etc/rc.d/S99ign
-          
-          cat << 'EOF' > $BASE_FILES/etc/rc.local
-          # Put your custom commands here that should be executed once
-          # the system init finished. By default this file does nothing.
-          exit 0
-          EOF
-          chmod +x $BASE_FILES/etc/rc.local
-          
-          if [ "$FIRMWARE_LOWER" == "istoreos" ]; then
-              echo "为 iStoreOS 创建 /root/install-to-emmc.sh 软链接..."
-              mkdir -p $BASE_FILES/root
-              ln -sf /usr/sbin/install-to-emmc.sh $BASE_FILES/root/install-to-emmc.sh
-          fi
+          chmod +x $GITHUB_WORKSPACE/scripts/05-inject.sh
+          $GITHUB_WORKSPACE/scripts/05-inject.sh
 
       - name: Download Package & Compile
         run: |

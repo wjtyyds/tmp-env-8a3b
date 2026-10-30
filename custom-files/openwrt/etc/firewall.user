@@ -1,0 +1,3 @@
+# --- 强制 LAN 区域使用 Fullcone (优先覆盖 fw4 默认的 Masquerade) ---
+nft insert rule inet fw4 srcnat oifname "br-lan" meta nfproto ipv4 fullcone 2>/dev/null
+nft insert rule inet fw4 dstnat iifname "br-lan" meta nfproto ipv4 fullcone 2>/dev/null
