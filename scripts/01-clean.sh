@@ -2,6 +2,20 @@
 # 01-clean.sh
 
 # ==========================================
+# 0.5. 提取公共逻辑：Golang 升级 (必须在清理冲突前执行)
+# ==========================================
+if [[ "$FIRMWARE_TYPE" != lede* ]] && [ "$BUILD_TYPE" != "personal" ]; then
+    if [[ "$TARGET_DATE_ISO" != *"2026-09-09"* ]]; then
+        echo "【Public 编译专属】：为 OpenWrt，ImmortalWrt，iStoreOS 升级 Golang 1.27..."
+        rm -rf feeds/packages/lang/golang
+        git clone -b 27.x --depth 1 https://github.com/sbwml/packages_lang_golang.git feeds/packages/lang/golang
+        ./scripts/feeds install -a -f
+    else
+        echo "⛔ [DEBUG-SH] 命中 09.09 拦截日期，保持自带版本，跳过 Golang 升级！"
+    fi
+fi
+
+# ==========================================
 # 1. 统一处理：卸载系统自带的冲突插件 (全局生效)
 # ==========================================
 echo "====== 统一卸载冲突插件 ======"

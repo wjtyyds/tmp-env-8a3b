@@ -17,7 +17,6 @@ clone_time_machine() {
     echo "📅 目标节点: ${target_date:-最新}"
     echo "=========================================="
     
-    # 场景 A: 没有指定日期，直接拉取最新 Tag (如果没 Tag 拉 master 最新)
     if [ -z "$target_date" ]; then
         local api_resp=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$repo_path/releases/latest")
         local latest_tag=$(echo "$api_resp" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
@@ -31,14 +30,13 @@ clone_time_machine() {
         fi
         return 0
     fi
-    
-    # 场景 B: 指定了日期，启动严格的回溯机制
+
     if [ "$use_hash_only" != "true" ]; then
         echo "🔍 [时光机] 正在检索 $target_date 之前的最新 Tag..."
         local releases_json=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$repo_path/releases?per_page=30")
         local target_tag=""
         target_tag=$(echo "$releases_json" | jq -r --arg date "$target_date" 'map(select(.published_at < $date)) | .[0].tag_name // empty')
-        
+
         if [ -n "$target_tag" ] && [ "$target_tag" != "null" ]; then
             echo "🎉 [时光机] 精准锁定！找到历史 Tag: $target_tag"
             git clone --branch "$target_tag" --depth 1 "$repo_url" "package/custom/$dest_dir"
@@ -47,13 +45,12 @@ clone_time_machine() {
             echo "⚠️ [时光机] 未能在历史中找到合适的 Tag，将降级寻找 Commit Hash..."
         fi
     fi
-    
-    # 2. 降级或强制寻找日期之前的最后一次 Commit Hash
+
     echo "🔍 [时光机] 正在检索 $target_date 之前的最后一次提交..."
     local default_branch=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$repo_path" | jq -r '.default_branch // "master"')
     local api_url="https://api.github.com/repos/$repo_path/commits?sha=$default_branch&until=$target_date&per_page=1"
     local commit_hash=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$api_url" | jq -r '.[0].sha // empty')
-    
+
     if [ -n "$commit_hash" ] && [ "$commit_hash" != "null" ]; then
         echo "🎉 [时光机] 精准锁定！找到历史 Hash: ${commit_hash:0:7}"
         git clone "$repo_url" "package/custom/$dest_dir"
@@ -67,20 +64,6 @@ clone_time_machine() {
 }
 
 mkdir -p package/custom
-
-# ==========================================
-# 0.5. 提取公共逻辑：Golang 升级
-# ==========================================
-if [[ "$FIRMWARE_TYPE" != lede* ]] && [ "$BUILD_TYPE" != "personal" ]; then
-    if [[ "$TARGET_DATE_ISO" != *"2026-09-09"* ]]; then
-        echo "【Public 编译专属】：为 OpenWrt，ImmortalWrt，iStoreOS 升级 Golang 1.27..."
-        rm -rf feeds/packages/lang/golang
-        git clone -b 27.x --depth 1 https://github.com/sbwml/packages_lang_golang.git feeds/packages/lang/golang
-        ./scripts/feeds install -a -f
-    else
-        echo "⛔ [DEBUG-SH] 命中 09.09 拦截日期，保持自带版本，跳过 Golang 升级！"
-    fi
-fi
 
 # ==========================================
 # 3. 统一拉取：共用的第三方基础插件库 (全局生效，带时光机)
