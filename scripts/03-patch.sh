@@ -45,6 +45,8 @@ if [ "$FIRMWARE_TYPE" == "istoreos" ] && [ "$BUILD_TYPE" == "personal" ]; then
     ./scripts/feeds uninstall luci-theme-argon luci-app-argon-config 2>/dev/null || true
     rm -rf feeds/luci/themes/luci-theme-argon 2>/dev/null
     rm -rf feeds/luci/applications/luci-app-argon-config 2>/dev/null
+    find package/ -name "Makefile" -exec sed -i 's/luci-theme-argon//g' {} +
+    find package/ -name "Makefile" -exec sed -i 's/luci-app-argon-config//g' {} +
     git clone --depth 1 "https://github.com/jerrykuku/luci-theme-argon" "package/custom/luci-theme-argon-jerrykuku"
 fi
 
