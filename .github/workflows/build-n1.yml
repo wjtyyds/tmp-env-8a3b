@@ -500,6 +500,12 @@ jobs:
           # --- 3. RTL8152/8153 USB 转千兆网卡驱动与微代码固件 ---
           CONFIG_PACKAGE_kmod-usb-net-rtl8152=y
           CONFIG_PACKAGE_r8152-firmware=y
+          
+          # --- 4. Open-Box (代理面板) 底层依赖 ---
+          CONFIG_PACKAGE_kmod-nft-queue=y
+          CONFIG_PACKAGE_kmod-nft-nat=y
+          CONFIG_PACKAGE_kmod-veth=y
+          
           EOF
 
             # --- 新增日志输出开始 ---
