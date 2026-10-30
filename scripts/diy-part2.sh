@@ -325,6 +325,37 @@ echo 'BUILD_AUTHOR="粉墨悲欢@EnShan"' >> ${FILES_DIR}/etc/os-release
 echo "# Firmware compiled and customized by 粉墨悲欢" >> ${FILES_DIR}/etc/profile
 # ----------------------------------------
 
+# ==============================================================
+# F大同款魔法：在编译期直接生成默认的 /etc/config/wireless
+# 这样系统一开机就会原生拉起 WiFi，无需任何后台轮询脚本去碰撞！
+# 【重要修正】：排除 F大打包模式，仅对原生编译 (istoreos / lede-native) 生效
+# ==============================================================
+if [ "$FIRMWARE_TYPE" == "istoreos" ] || [ "$FIRMWARE_TYPE" == "lede-native" ]; then
+    mkdir -p ${FILES_DIR}/etc/config
+    cat << 'EOF' > ${FILES_DIR}/etc/config/wireless
+
+config wifi-device 'radio0'
+	option type 'mac80211'
+	option hwmode '11a'
+	option path 'platform/soc/d0000000.apb/d0070000.mmc/mmc_host/mmc0/mmc0:0001/mmc0:0001:1'
+	option htmode 'VHT80'
+	option country 'US'
+	option legacy_rates '1'
+	option mu_beamformer '0'
+	option channel '36'
+	option band '5g'
+
+config wifi-iface 'default_radio0'
+	option device 'radio0'
+	option network 'lan'
+	option mode 'ap'
+	option encryption 'psk-mixed'
+	option ssid 'Phicomm_n1'
+	option key 'password'
+EOF
+chmod 644 ${FILES_DIR}/etc/config/wireless
+fi
+
 # 💡 命名为 zz_custom_setup 保证全系统最后一个执行，绝对秒杀 LEDE 祖传跑分
 # 第一部分：写入公共开头和 OAF 模块逻辑
 cat << 'EOF' > ${FILES_DIR}/etc/uci-defaults/zz_custom_setup
@@ -437,28 +468,6 @@ sed -i 's|\\________\\/.*|\\________\\/     '"$VER_STR"'\n                   ---
 cat /etc/banner
 # =============================================================================
 
-# 首次开机自动唤醒 WiFi 并修改参数（后台轮询）
-(
-    for i in $(seq 1 15); do
-        if ls /sys/class/net/ | grep -q "^wlan"; then
-            break
-        fi
-        sleep 2
-    done
-    wifi config 2>/dev/null
-    uci set wireless.@wifi-device[0].country='US'
-    uci set wireless.@wifi-device[0].htmode='VHT80'
-    uci set wireless.@wifi-device[0].channel='36'
-    uci set wireless.@wifi-device[0].band='5g'
-    uci delete wireless.@wifi-device[0].disabled 2>/dev/null
-    uci set wireless.@wifi-iface[0].ssid='Phicomm_n1'
-    uci set wireless.@wifi-iface[0].encryption='psk-mixed'
-    uci set wireless.@wifi-iface[0].key='password'
-    uci delete wireless.@wifi-iface[0].disabled 2>/dev/null
-    uci commit wireless
-    wifi up 2>/dev/null
-) &
-
 rm -f /etc/uci-defaults/zzz_ledenative_setup
 EOF
 
@@ -482,42 +491,7 @@ if [ -f /etc/config/aurora ]; then
     uci commit aurora 2>/dev/null
 fi
 
-# 3. 首次开机自动唤醒 WiFi 并修改参数（后台轮询）
-(
-    # 循环等待，直到系统内核成功挂载 wlan 物理接口
-    for i in $(seq 1 15); do
-        if ls /sys/class/net/ | grep -q "^wlan"; then
-            break
-        fi
-        sleep 2
-    done
-
-    # 触发系统原生生成默认配置（不加 rm -f，绝不破坏原有默认参数）
-    wifi config 2>/dev/null
-
-    # 按照需求精确配置 5G 频段与属性
-    uci set wireless.@wifi-device[0].country='US'
-    uci set wireless.@wifi-device[0].htmode='VHT80'
-    uci set wireless.@wifi-device[0].channel='36'
-    uci set wireless.@wifi-device[0].band='5g'
-    uci delete wireless.@wifi-device[0].disabled 2>/dev/null
-
-    # 配置接口参数
-    uci set wireless.@wifi-iface[0].ssid='Phicomm_n1'
-    uci set wireless.@wifi-iface[0].encryption='psk-mixed'
-    uci set wireless.@wifi-iface[0].key='password'
-    uci delete wireless.@wifi-iface[0].disabled 2>/dev/null
-
-    uci commit wireless
-
-    # 强制拉起底层物理网卡
-    wifi up 2>/dev/null
-) &
-
-# 4. 重启无线服务，使 WiFi 配置立即生效
-wifi reload 2>/dev/null
-
-# 5. 脚本执行完毕后自毁 (阅后即焚)
+# 3. 脚本执行完毕后自毁 (阅后即焚)
 rm -f /etc/uci-defaults/zzz_istoreos_setup
 EOF
 
@@ -563,43 +537,9 @@ EOF
 
 # --- iStoreOS Personal 专属叠加配置开始 ---
 
-# 1. 替换 root 密码为 password 的哈希值，跳过 iStoreOS 强制密码向导
+# 替换 root 密码为 password 的哈希值，跳过 iStoreOS 强制密码向导
 sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
 
-# 2. 首次开机自动唤醒 WiFi 并修改参数（后台轮询）
-(
-    # 循环等待，直到系统内核成功挂载 wlan 物理接口
-    for i in $(seq 1 15); do
-        if ls /sys/class/net/ | grep -q "^wlan"; then
-            break
-        fi
-        sleep 2
-    done
-
-    # 触发系统原生生成默认配置（不加 rm -f，绝不破坏原有默认参数）
-    wifi config 2>/dev/null
-
-    # 按照需求精确配置 5G 频段与属性
-    uci set wireless.@wifi-device[0].country='US'
-    uci set wireless.@wifi-device[0].htmode='VHT80'
-    uci set wireless.@wifi-device[0].channel='36'
-    uci set wireless.@wifi-device[0].band='5g'
-    uci delete wireless.@wifi-device[0].disabled 2>/dev/null
-
-    # 配置接口参数
-    uci set wireless.@wifi-iface[0].ssid='Phicomm_n1'
-    uci set wireless.@wifi-iface[0].encryption='psk-mixed'
-    uci set wireless.@wifi-iface[0].key='password'
-    uci delete wireless.@wifi-iface[0].disabled 2>/dev/null
-
-    uci commit wireless
-
-    # 强制拉起底层物理网卡
-    wifi up 2>/dev/null
-) &
-
-# 3. 重启无线服务，使 WiFi 配置立即生效
-wifi reload 2>/dev/null
 # --- iStoreOS Personal 专属叠加配置结束 ---
 EOF
     fi
