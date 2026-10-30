@@ -196,6 +196,19 @@ else
     echo "【Personal 模式】：跳过特定日期的 Dockerman 源码替换逻辑，保持纯净。"
 fi
 
+# ====== iStoreOS Personal 专属：替换自带 Argon 主题及配置 ======
+if [ "$FIRMWARE_TYPE" == "istoreos" ] && [ "$BUILD_TYPE" == "personal" ]; then
+    echo "【iStoreOS Personal 专属】：干掉自带 Argon 主题与配置，拉取 Jerrykuku 版本..."
+
+    # 彻底卸载并清理源码自带的 argon 主题及 config 插件
+    ./scripts/feeds uninstall luci-theme-argon luci-app-argon-config 2>/dev/null || true
+    rm -rf feeds/luci/themes/luci-theme-argon 2>/dev/null
+    rm -rf feeds/luci/applications/luci-app-argon-config 2>/dev/null
+
+    # 使用时光机拉取全新的 jerrykuku 原版 argon 主题
+    clone_time_machine "https://github.com/jerrykuku/luci-theme-argon" "luci-theme-argon-jerrykuku" "$TARGET_DATE_ISO"
+fi
+
 if [[ "$FIRMWARE_TYPE" == lede* ]]; then
     # 修复 LEDE Aurora 主题页脚
     find package/custom/luci-theme-aurora -name "footer.ut" -exec sed -i 's/({{ version.distrevision }})/{% if (version.distrevision): %} ({{ version.distrevision }}){% endif %}/g' {} +
@@ -326,34 +339,42 @@ echo "# Firmware compiled and customized by 粉墨悲欢" >> ${FILES_DIR}/etc/pr
 # ----------------------------------------
 
 # ==============================================================
-# F大同款魔法：在编译期直接生成默认的 /etc/config/wireless
-# 这样系统一开机就会原生拉起 WiFi，无需任何后台轮询脚本去碰撞！
-# 【重要修正】：排除 F大打包模式，仅对原生编译 (istoreos / lede-native) 生效
+# 动态注入：在首次开机时通过 uci 覆写 WiFi 配置 (完美继承 F大调优参数)
+# 这样系统一开机就会拉起 WiFi，且绝不破坏底层真实的硬件路径识别
 # ==============================================================
 if [ "$FIRMWARE_TYPE" == "istoreos" ] || [ "$FIRMWARE_TYPE" == "lede-native" ]; then
-    mkdir -p ${FILES_DIR}/etc/config
-    cat << 'EOF' > ${FILES_DIR}/etc/config/wireless
+    mkdir -p ${FILES_DIR}/etc/uci-defaults
+    cat << 'EOF' > ${FILES_DIR}/etc/uci-defaults/99_custom_wifi
+#!/bin/sh
 
-config wifi-device 'radio0'
-	option type 'mac80211'
-	option hwmode '11a'
-	option path 'platform/soc/d0000000.apb/d0070000.mmc/mmc_host/mmc0/mmc0:0001/mmc0:0001:1'
-	option htmode 'VHT80'
-	option country 'US'
-	option legacy_rates '1'
-	option mu_beamformer '0'
-	option channel '36'
-	option band '5g'
+# 1. 强制激活网卡：删掉原生自动生成的禁用标记，并显式设为开启
+uci delete wireless.radio0.disabled 2>/dev/null
+uci set wireless.radio0.disabled='0'
 
-config wifi-iface 'default_radio0'
-	option device 'radio0'
-	option network 'lan'
-	option mode 'ap'
-	option encryption 'psk-mixed'
-	option ssid 'Phicomm_n1'
-	option key 'password'
+# 2. 深度同步 F大的无线底层硬件调优参数 (避开 path 和 type，原样继承其他所有属性)
+uci set wireless.radio0.hwmode='11a'
+uci set wireless.radio0.htmode='VHT80'
+uci set wireless.radio0.country='US'
+uci set wireless.radio0.legacy_rates='1'
+uci set wireless.radio0.mu_beamformer='0'
+uci set wireless.radio0.channel='36'
+uci set wireless.radio0.band='5g'
+
+# 3. 同步接口层网络及安全参数 (包含 SSID 和密码)
+uci set wireless.default_radio0.network='lan'
+uci set wireless.default_radio0.mode='ap'
+uci set wireless.default_radio0.encryption='psk-mixed'
+uci set wireless.default_radio0.ssid='Phicomm_n1'
+uci set wireless.default_radio0.key='password'
+
+# 4. 保存配置并让系统重新加载无线模块
+uci commit wireless
+wifi reload
+
+# 5. 脚本执行完毕后自动销毁，不留垃圾
+rm -f /etc/uci-defaults/99_custom_wifi
 EOF
-chmod 644 ${FILES_DIR}/etc/config/wireless
+    chmod 755 ${FILES_DIR}/etc/uci-defaults/99_custom_wifi
 fi
 
 # 💡 命名为 zz_custom_setup 保证全系统最后一个执行，绝对秒杀 LEDE 祖传跑分
@@ -532,13 +553,17 @@ uci commit AdGuardHome
 EOF
 
     # ================= 第二部分：如果当前是 iStoreOS，追加专属特性 =================
-    if [ "$FIRMWARE_TYPE" == "istoreos" ]; then
-        cat << 'EOF' >> ${FILES_DIR}/etc/uci-defaults/97_personal_setup
+        if [ "$FIRMWARE_TYPE" == "istoreos" ]; then
+            cat << 'EOF' >> ${FILES_DIR}/etc/uci-defaults/97_personal_setup
 
-# --- iStoreOS Personal 专属叠加配置开始 ---
+    # --- iStoreOS Personal 专属叠加配置开始 ---
 
-# 替换 root 密码为 password 的哈希值，跳过 iStoreOS 强制密码向导
-sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
+    # 1. 替换 root 密码为 password 的哈希值，跳过 iStoreOS 强制密码向导
+    sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
+
+    # 2. 强制设置默认主题为 Aurora (Personal 模式仅切换主题，不修改侧边栏等布局参数)
+    uci set luci.main.mediaurlbase='/luci-static/aurora' 2>/dev/null
+    uci commit luci 2>/dev/null
 
 # --- iStoreOS Personal 专属叠加配置结束 ---
 EOF
