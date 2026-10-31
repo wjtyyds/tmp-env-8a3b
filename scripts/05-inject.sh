@@ -152,9 +152,11 @@ if [ ! -f /etc/config/wireless ]; then
     sleep 2
 fi
 
-# 1. 强制激活网卡并剥离禁用标记
+# 1. 强制激活网卡并剥离禁用标记 (同时解除物理层和接口层的禁用)
 uci delete wireless.radio0.disabled 2>/dev/null
 uci set wireless.radio0.disabled='0'
+uci delete wireless.default_radio0.disabled 2>/dev/null
+uci set wireless.default_radio0.disabled='0'
 
 # 2. 深度同步底层的调优参数
 uci set wireless.radio0.hwmode='11a'
@@ -163,7 +165,7 @@ uci set wireless.radio0.country='US'
 uci set wireless.radio0.legacy_rates='1'
 uci set wireless.radio0.mu_beamformer='0'
 uci set wireless.radio0.channel='36'
-uci set wireless.radio0.band='5g'
+uci delete wireless.radio0.band 2>/dev/null
 
 # 3. 同步接口层网络及安全参数
 uci set wireless.default_radio0.network='lan'

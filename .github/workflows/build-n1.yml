@@ -326,6 +326,11 @@ jobs:
         run: |
           git clone https://github.com/unifreq/openwrt_packit packit
           cd packit
+          
+          # ===== 注入：强制抹除 F 大默认配置里的 5G 频段硬绑定 =====
+          sed -i 's|cp -v $WIRELESS_CONFIG etc/config/|cp -v $WIRELESS_CONFIG etc/config/ \&\& sed -i "/option band/d" etc/config/wireless|' public_funcs
+          # =========================================================
+          
           sudo mkdir -p /opt/kernel
           sudo chown -R $USER:$GROUPS /opt/kernel
           

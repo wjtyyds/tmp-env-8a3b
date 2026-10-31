@@ -4,9 +4,12 @@ if grep -qi 'istoreos' /etc/os-release; then
     # 1. 替换 root 密码为 password 的哈希值，跳过向导
     sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
 
-    # 2. 强制设置默认主题为 Aurora，配置侧边栏并关闭快捷工具栏
+    # 2. 强制设置默认主题为 Aurora (显式注册 + 设为默认)
+    uci set luci.themes.Aurora='/luci-static/aurora' 2>/dev/null
     uci set luci.main.mediaurlbase='/luci-static/aurora' 2>/dev/null
     uci commit luci 2>/dev/null
+
+    # 3. 配置侧边栏并关闭快捷工具栏
     if [ -f /etc/config/aurora ]; then
         uci set aurora.theme.nav_type='sidebar' 2>/dev/null
         uci set aurora.theme.toolbar_enabled='0' 2>/dev/null
