@@ -126,72 +126,46 @@ if [ "$FIRMWARE_LOWER" == "istoreos" ]; then
 fi
 
 # ==============================================================
-# 终极 WiFi 注入：后台轮询等待硬件，精准覆写配置 (N1 专属)
+# 终极方案：Rootfs 直入，静态固化 WiFi 配置与版本号修复
 # ==============================================================
 if [ "$FIRMWARE_LOWER" == "istoreos" ] || [ "$FIRMWARE_LOWER" == "lede-native" ]; then
-    echo "====== 注入 N1 专属 WiFi 守护脚本 (后台轮询机制) ======"
+    echo "====== 注入静态 WiFi 配置文件 (直插 Rootfs) ======"
 
-    # 设定 base-files 注入路径
-    BASE_FILES="openwrt/package/base-files/files"
-    mkdir -p ${BASE_FILES}/etc
+    # 1. 强行创建 /etc/config/wireless，跳过系统原生的硬件探测
+    mkdir -p ${BASE_FILES}/etc/config
+    cat << 'EOF' > ${BASE_FILES}/etc/config/wireless
+config wifi-device 'radio0'
+	option type 'mac80211'
+	option path 'platform/soc/d0000000.apb/d0070000.mmc/mmc_host/mmc2/mmc2:0001/mmc2:0001:1'
+	option channel '36'
+	option htmode 'VHT80'
+	option disabled '0'
+	option hwmode '11a'
+	option country 'US'
+	option legacy_rates '1'
+	option mu_beamformer '0'
 
-    # 1. 编写后台等待与覆写脚本
-    cat << 'EOF' > ${BASE_FILES}/etc/n1_wifi_setup.sh
-#!/bin/sh
-
-# 后台等待：最多等 30 次（约 60 秒），直到系统原生探明硬件并生成 wireless 配置文件
-wait_time=0
-while [ ! -f /etc/config/wireless ] && [ "$wait_time" -lt 30 ]; do
-    sleep 2
-    wait_time=$((wait_time + 1))
-done
-
-# 兜底：如果等了一分钟都没生成，强制触发一次 WiFi 探测
-if [ ! -f /etc/config/wireless ]; then
-    wifi config >/dev/null 2>&1
-    sleep 2
-fi
-
-# 1. 强制激活网卡并剥离禁用标记 (同时解除物理层和接口层的禁用)
-uci delete wireless.radio0.disabled 2>/dev/null
-uci set wireless.radio0.disabled='0'
-uci delete wireless.default_radio0.disabled 2>/dev/null
-uci set wireless.default_radio0.disabled='0'
-
-# 2. 深度同步底层的调优参数
-uci set wireless.radio0.hwmode='11a'
-uci set wireless.radio0.htmode='VHT80'
-uci set wireless.radio0.country='US'
-uci set wireless.radio0.legacy_rates='1'
-uci set wireless.radio0.mu_beamformer='0'
-uci set wireless.radio0.channel='36'
-uci delete wireless.radio0.band 2>/dev/null
-
-# 3. 同步接口层网络及安全参数
-uci set wireless.default_radio0.network='lan'
-uci set wireless.default_radio0.mode='ap'
-uci set wireless.default_radio0.encryption='psk-mixed'
-uci set wireless.default_radio0.ssid='Phicomm_n1'
-uci set wireless.default_radio0.key='password'
-
-# 4. 提交并重载无线服务
-uci commit wireless
-wifi reload
-
-# 5. 阅后即焚：清理文件本身和 rc.local 中的启动项
-sed -i '/n1_wifi_setup\.sh/d' /etc/rc.local
-rm -f /etc/n1_wifi_setup.sh
+config wifi-iface 'default_radio0'
+	option device 'radio0'
+	option network 'lan'
+	option mode 'ap'
+	option ssid 'Phicomm_n1'
+	option encryption 'psk-mixed'
+	option disabled '0'
+	option key 'password'
 EOF
 
-    # 必须赋予可执行权限，否则开机无法运行
-    chmod 755 ${BASE_FILES}/etc/n1_wifi_setup.sh
+    echo "====== 注入版本号 r0+ 暴力洗刷脚本 ======"
 
-    # 2. 将触发指令注入到 rc.local 中
-    if [ ! -f ${BASE_FILES}/etc/rc.local ]; then
-        echo '#!/bin/sh' > ${BASE_FILES}/etc/rc.local
-        echo 'exit 0' >> ${BASE_FILES}/etc/rc.local
-    fi
-
-    # 核心：使用 & 符号让脚本在后台执行，绝对不阻塞有线网络分配 IP
-    sed -i '/exit 0/i \/etc/n1_wifi_setup.sh &' ${BASE_FILES}/etc/rc.local
+    # 2. 注入 98 号开机修复脚本，全局洗刷 r0+ 字符串
+    mkdir -p ${BASE_FILES}/etc/uci-defaults
+    cat << 'EOF' > ${BASE_FILES}/etc/uci-defaults/98_fix_version
+#!/bin/sh
+# 全局搜索并替换 os-release, openwrt_release 和 banner 中的 r0+ 为 r
+sed -i 's/r0+/r/g' /usr/lib/os-release /etc/os-release /etc/openwrt_release /etc/banner 2>/dev/null
+rm -f /etc/uci-defaults/98_fix_version
+exit 0
+EOF
+    # 赋予执行权限，确保开机能够自动执行
+    chmod 755 ${BASE_FILES}/etc/uci-defaults/98_fix_version
 fi
