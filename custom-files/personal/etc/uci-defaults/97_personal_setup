@@ -33,7 +33,7 @@ if grep -qi 'istoreos' /etc/os-release; then
     # 1. 注入 root 密码哈希
     sed -i 's/^root:[^:]*:/root:\$1\$V4UetPzk\$CYXluq4wUazHjmCDBCqXF.:/' /etc/shadow
 
-    # 2. 强力双重锁定 Aurora 主题 (显式注册 + 设为默认)
+    # 2. 强力双重锁定 Aurora 主题
     uci set luci.themes.Aurora='/luci-static/aurora' 2>/dev/null
     uci set luci.main.mediaurlbase='/luci-static/aurora' 2>/dev/null
     uci commit luci 2>/dev/null

@@ -52,6 +52,9 @@ if [ "$FIRMWARE_TYPE" == "istoreos" ] && [ "$BUILD_TYPE" == "personal" ]; then
 
     # 2. 规范文件夹命名：只克隆这一个自带 config 插件的主题仓库，名字必须是官方标准名
     git clone --depth 1 "https://github.com/jerrykuku/luci-theme-argon" "package/custom/luci-theme-argon"
+
+    # 干掉 Argon 自带的霸道开机自启脚本，防止它抢夺默认主题优先级
+    rm -f package/custom/luci-theme-argon/root/etc/uci-defaults/30_luci-theme-argon 2>/dev/null
 fi
 
 if [[ "$FIRMWARE_TYPE" == lede* ]]; then
